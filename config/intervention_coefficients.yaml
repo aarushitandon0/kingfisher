@@ -1,0 +1,37 @@
+# Scenario effect sizes. THE MODEL NEVER SUPPLIES THESE (CLAUDE.md #6).
+#
+# Every entry must carry: effect, magnitude, uncertainty_range, citation, applies_to.
+# An uncited coefficient must not be merged. Populated on Day 6 from the stormwater
+# and riparian literature; the table below is the schema plus the intended levers,
+# with magnitudes deliberately left null.
+
+schema:
+  required_fields: [effect, magnitude, uncertainty_range, citation, applies_to]
+  units_note: >
+    magnitude is expressed in the units of the feature it perturbs
+    (percentage points for imperviousness_pct, metres for riparian_width_m,
+    fractional multiplier for index-valued features).
+
+interventions: []
+
+# Intended levers (MASTERSPEC section 9.3). Move each into `interventions` only
+# once it has a real magnitude and a real citation.
+#
+#   riparian_buffer_restoration  -> riparian_ndvi_mean up, riparian_width_m up
+#   permeable_paving             -> imperviousness_pct down
+#   detention_basin              -> precip_max_hourly (effective) down
+#   daylighting                  -> observable -> true, riparian_* up
+#   street_sweeping              -> first_flush_index down
+#   green_roofs                  -> imperviousness_pct down (partial)
+
+climate_scenarios: []   # +2C summer mean, +20% rainfall intensity, +30% dry spell - Day 8
+
+# Applied to every scenario run: intervals are widened because perturbing a
+# statistical model's features is correlational extrapolation, not a causal
+# experiment (MASTERSPEC section 9.1).
+uncertainty_inflation:
+  interval_widening_factor: null
+  caveat: >
+    Planning estimate. Intervention effect sizes are taken from cited literature and
+    applied to a statistical model; this is not a causal experiment. Prediction
+    intervals have been widened accordingly.

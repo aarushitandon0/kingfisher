@@ -1,0 +1,32 @@
+# Exceedance thresholds per variable.
+#
+# Where an EEA/SNIRH water-quality class exists, use it and say so on the alert.
+# Otherwise derive from the reach's own seasonal historical distribution - also
+# stated on the alert. `derivation` is rendered in the UI; it is not a comment.
+#
+# Values are left null until Day 4. A null threshold means the alert engine
+# returns INSUFFICIENT_EVIDENCE for that variable, never a guessed number.
+
+variables:
+  turbidity_proxy:
+    units: dimensionless        # Nechad-style optical proxy, not NTU
+    derivation: seasonal_percentile
+    percentile: 0.90
+    absolute_value: null
+    source: null
+
+  ndci:
+    units: dimensionless
+    derivation: seasonal_percentile
+    percentile: 0.90
+    absolute_value: null
+    source: null
+
+guardrails:
+  min_exceedance_prob: 0.60       # no alert below this
+  cooldown_hours: 72              # max one alert per reach per 72h
+  staleness_days: 21              # older last usable obs -> INSUFFICIENT_EVIDENCE
+  unobservable_max_severity: WATCH
+  drift:
+    residual_window_days: 60
+    max_abs_standardised_residual: 2.5

@@ -1,0 +1,66 @@
+# Coimbra, Portugal - primary site (Mondego tributaries).
+# Adding a city should require a file like this plus a land-cover adapter, nothing else.
+
+city: coimbra
+name: Coimbra
+country: PT
+reach_id_prefix: CMB
+
+# Study area. Lower Mondego through Coimbra, including the tributaries
+# (Ribeira de Coselhas, Vale das Flores) and enough main channel to give the
+# observability gate some wide reaches to work with.
+bbox:
+  min_lon: -8.5200
+  min_lat: 40.1500
+  max_lon: -8.3400
+  max_lat: 40.2800
+
+crs:
+  storage: EPSG:4326        # everything in PostGIS
+  metric: EPSG:3763         # ETRS89 / Portugal TM06 - lengths, buffers, areas
+
+timezone: Europe/Lisbon
+
+network:
+  source: osm                       # osm | eu_hydro
+  waterway_tags: [river, stream, canal]
+  reach_length_m:
+    target: 350
+    min: 200
+    max: 500
+
+observability:
+  # observable = median_water_pixels >= min_water_pixels. Tune on Day 1.
+  min_water_pixels: 5
+  max_cloud_fraction: 0.2
+
+satellite:
+  collection: sentinel-2-l2a
+  start_date: 2016-01-01
+  bands: [B02, B03, B04, B05, B08, B11, SCL]
+
+weather:
+  archive_start: 2016-01-01
+  # Query point is the centroid of each reach's upstream catchment, not the reach.
+  variables:
+    - precipitation
+    - temperature_2m
+    - soil_moisture_0_to_7cm
+    - et0_fao_evapotranspiration
+    - relative_humidity_2m
+    - wind_speed_10m
+
+static_attributes:
+  land_cover_adapter: clms          # CLMS Imperviousness / Riparian Zones (EU only)
+  population_source: ghsl
+  alan_source: viirs
+
+ground_truth:
+  source: snirh
+  station_ids: []                   # filled on Day 0 from snirh.apambiente.pt
+
+exposure:
+  buffer_m: 250
+
+# Populated by pipeline/l0_network.py. Empty until L0 has run.
+reaches: []

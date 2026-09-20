@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: kingfisher-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kingfisher
+      POSTGRES_USER: ${POSTGRES_USER:-kingfisher}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kingfisher}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - kingfisher-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kingfisher} -d kingfisher"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  kingfisher-pgdata:

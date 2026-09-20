@@ -1,0 +1,48 @@
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+.cdsapirc
+
+# --- Data: everything except the hand-curated reference set ---
+data/raw/
+data/interim/
+data/processed/
+!data/reference/
+!data/reference/**
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Frontend ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# --- Models / artefacts ---
+artifacts/
+*.pkl
+*.joblib
+*.pt
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json

@@ -1,0 +1,60 @@
+# Pune, India - transfer demo (Mula-Mutha). Same pipeline, different config.
+# Placeholder: bbox and adapters are set on Day 8. Do not build on this yet.
+
+city: pune
+name: Pune
+country: IN
+reach_id_prefix: PUN
+
+bbox:
+  min_lon: 73.7300
+  min_lat: 18.4400
+  max_lon: 73.9600
+  max_lat: 18.6400
+
+crs:
+  storage: EPSG:4326
+  metric: EPSG:32643        # UTM zone 43N
+
+timezone: Asia/Kolkata
+
+network:
+  source: osm
+  waterway_tags: [river, stream, canal]
+  reach_length_m:
+    target: 350
+    min: 200
+    max: 500
+
+observability:
+  min_water_pixels: 5
+  max_cloud_fraction: 0.2
+
+satellite:
+  collection: sentinel-2-l2a
+  start_date: 2016-01-01
+  bands: [B02, B03, B04, B05, B08, B11, SCL]
+
+weather:
+  archive_start: 2016-01-01
+  variables:
+    - precipitation
+    - temperature_2m
+    - soil_moisture_0_to_7cm
+    - et0_fao_evapotranspiration
+    - relative_humidity_2m
+    - wind_speed_10m
+
+static_attributes:
+  land_cover_adapter: worldcover    # CLMS is EU-only; ESA WorldCover 10m instead
+  population_source: ghsl
+  alan_source: viirs
+
+ground_truth:
+  source: cpcb
+  station_ids: []
+
+exposure:
+  buffer_m: 250
+
+reaches: []

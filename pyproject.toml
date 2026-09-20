@@ -1,0 +1,98 @@
+[project]
+name = "kingfisher"
+version = "0.1.0"
+description = "Early-warning and resilience-planning system for urban streams (OneAquaHealth IEEE Global Hackathon 2026, Track 6)"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = { text = "MIT" }
+
+dependencies = [
+  # --- API layer ---
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "python-dotenv>=1.0",
+
+  # --- Persistence (PostGIS) ---
+  "sqlalchemy>=2.0",
+  "geoalchemy2>=0.15",
+  "psycopg[binary]>=3.2",
+  "alembic>=1.13",
+
+  # --- Geospatial / hydrology ---
+  "geopandas>=1.0",
+  "shapely>=2.0",
+  "pyproj>=3.6",
+  "rasterio>=1.3",
+  "pysheds>=0.4",
+  "osmnx>=2.0",
+  "pyrosm>=0.6.2",
+
+  # --- Data acquisition ---
+  "sentinelhub>=3.10",
+  "requests>=2.32",
+  "requests-cache>=1.2",
+  "httpx>=0.27",
+
+  # --- Modelling ---
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "scikit-learn>=1.5",
+  "lightgbm>=4.5",
+  "torch>=2.4",
+  "PyWavelets>=1.7",
+  "shap>=0.46",
+
+  # --- Config / logging ---
+  "pyyaml>=6.0",
+  "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=5.0",
+  "ruff>=0.7",
+  "mypy>=1.13",
+  "types-PyYAML",
+  "types-requests",
+]
+notebooks = [
+  "jupyterlab>=4.2",
+  "matplotlib>=3.9",
+  "folium>=0.17",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core", "pipeline", "models", "engine", "api"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+ignore = ["ANN101", "ANN102", "ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN"]
+"migrations/*" = ["ANN", "E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+exclude = ["migrations/", "frontend/", "notebooks/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "network: test requires live network access (deselected by default in CI)",
+  "db: test requires a running PostGIS instance",
+]
