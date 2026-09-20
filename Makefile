@@ -2,7 +2,7 @@
 # Requires: docker compose, and a Python 3.11 env with `pip install -e ".[dev]"`.
 
 .DEFAULT_GOAL := help
-.PHONY: help dirs data data-list smoke smoke-sat smoke-weather db-up db-down db-migrate db-revision test lint format api
+.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability db-up db-down db-migrate db-revision test lint format api
 
 PY ?= python
 
@@ -25,6 +25,12 @@ smoke-sat:  ## GATE: Sentinel Hub Statistical API returns numbers
 
 smoke-weather:  ## GATE: Open-Meteo returns data and the cache hits on replay
 	$(PY) scripts/smoke_test_weather.py
+
+l0: db-migrate  ## L0 backbone: OSM -> reaches -> catchments -> PostGIS + GeoJSON
+	$(PY) -m pipeline.l0_network --city $(or $(city),coimbra)
+
+observability:  ## GATE: how many reaches Sentinel-2 can actually see (Day 1)
+	$(PY) scripts/check_observability.py --city $(or $(city),coimbra)
 
 db-up:  ## Start PostGIS and wait until it is accepting connections
 	docker compose up -d db

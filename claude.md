@@ -171,11 +171,24 @@ Day 0  — [~] repo skeleton, migrations, logging, disk cache  DONE
          [x] open datasets on disk, 0.84 GB: OSM Coimbra bbox (620 waterways incl.
              Ribeira de Coselhas/Antanhol/Eiras, 80 schools, 69 playgrounds),
              OSM Portugal pbf, CopDEM GLO-30 x4, ESA WorldCover, GHS-POP
-         [ ] CDSE account + OAuth client -> .env, then Sentinel Hub gate  <- BLOCKER
-         [ ] MERIT Hydro password request (CopDEM is the fallback meanwhile)
+         [x] CDSE account + OAuth client -> .env; Sentinel Hub gate GREEN (353 reach
+             requests returned real numbers, all cached to disk)
+         [ ] MERIT Hydro password request  <- still open; L0 is running on the CopDEM
+             GLO-30 fallback and says so in every log line and GeoJSON (hydro_source)
          [ ] CLMS + VIIRS registration
          [ ] SNIRH station IDs -> config/cities/coimbra.yaml
-Day 1  — [ ] L0 network + catchments + observability gate
+Day 1  — [x] L0 network + catchments: 482 OSM ways -> 248 network nodes -> 129 links
+             (min_strahler 2) -> 353 reaches, median 347 m, 110.3 km, 356 topology
+             edges, 353 catchments in PostGIS + data/interim/*.geojson
+         [~] catchment QA on the CopDEM fallback: 46/356 topology edges break area
+             monotonicity, 37 of them involve a reach whose outlet snapped off the
+             derived channel network (flag SNAP_OFF_STREAM_NETWORK); 114 catchments hit
+             the hydrology window edge (flag CATCHMENT_TRUNCATED, area is a LOWER
+             BOUND). Re-run after MERIT Hydro arrives and expect most of this to go.
+         [x] observability gate PASSED: 51 of 353 reaches optically observable at 10 m
+             (median water pixels >= 5, 2023, MNDWI>0 + SCL=WATER + cloud-free);
+             302 are driver-only -> capped at WATCH. Report the split, do not hide it.
+         [ ] open both GeoJSONs in QGIS before L1 - the visual gate is still unmet
 Day 2  — [ ] L1 satellite + L2 drivers
 Day 3  — [ ] LightGBM baseline + walk-forward eval        ← first shippable system
 Day 4  — [ ] alert engine + guardrails + exposure

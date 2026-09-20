@@ -24,6 +24,13 @@ timezone: Europe/Lisbon
 network:
   source: osm                       # osm | eu_hydro
   waterway_tags: [river, stream, canal]
+  # Study-area size knob. The full OSM extract for this bbox is ~222 km of channel over
+  # 682 reaches, most of it order-1 field ditches that are neither observable at 10 m nor
+  # interesting to a river manager. min_strahler: 2 keeps the Mondego, the canals and the
+  # named tributaries the bbox was drawn for (Coselhas, Antanhol, Eiras, Ceira) and drops
+  # the ditches. Raise to 3 to shrink the PU bill further - that loses Coselhas and
+  # Antanhol, so do it only deliberately.
+  min_strahler: 2
   reach_length_m:
     target: 350
     min: 200

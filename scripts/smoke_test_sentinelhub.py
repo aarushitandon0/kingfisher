@@ -115,7 +115,18 @@ def build_request(client_id: str, client_secret: str):  # noqa: ANN201
     config.sh_base_url = SH_BASE_URL
     config.sh_token_url = SH_TOKEN_URL
 
-    bbox = BBox(POLYGON_BBOX, crs=CRS.WGS84)
+    # The Statistical API reads `resolution` in the units of the request CRS. In WGS84
+    # those units are DEGREES, so resolution=(10, 10) asks for 10-degree pixels and the
+    # service collapses the box to a single ~2.5 km pixel. Reproject to the local UTM
+    # zone, where 10 means 10 metres - Sentinel-2's native grid. Every reach polygon in
+    # l1_satellite.py must do the same.
+    bbox_wgs84 = BBox(POLYGON_BBOX, crs=CRS.WGS84)
+    utm_crs = CRS.get_utm_from_wgs84(*bbox_wgs84.middle)
+    bbox = bbox_wgs84.transform(utm_crs)
+    width_m = bbox.max_x - bbox.min_x
+    height_m = bbox.max_y - bbox.min_y
+    print(f"  grid       : {utm_crs.ogc_string()}  {width_m:.0f} x {height_m:.0f} m"
+          f"  -> {width_m / 10:.0f} x {height_m / 10:.0f} px at 10 m")
 
     return SentinelHubStatistical(
         aggregation=SentinelHubStatistical.aggregation(
