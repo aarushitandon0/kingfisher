@@ -34,11 +34,51 @@ make lint
 make api                      # http://localhost:8000/health
 ```
 
+## Data
+
+Nothing in `data/raw/` is committed - it is gitignored, and re-acquired with one command.
+`DATA_INVENTORY.md` records the provenance of every file (source URL, access date,
+licence) and is committed.
+
+```bash
+python scripts/fetch_datasets.py --list          # manifest + what is already on disk
+python scripts/fetch_datasets.py                 # ~800 MB, resumable, idempotent
+python scripts/fetch_datasets.py --only osm_coimbra copdem
+```
+
+Open access, fetched automatically:
+
+| Dataset | Use |
+|---------|-----|
+| OSM Coimbra bbox (Overpass JSON) | reaches, roads, exposure features - usable immediately |
+| OSM Portugal extract (Geofabrik `.pbf`) | full-country source for pyrosm/osmium |
+| Copernicus DEM GLO-30, 4 tiles | catchment delineation fallback while MERIT Hydro access is pending |
+| ESA WorldCover 10 m | land cover; CLMS substitute and the Pune adapter's source |
+| GHS-POP 3 arcsec | exposure denominator |
+| Open-Meteo archive + forecast | driver history and the live path, cached per request |
+
+Needs an account or a manual step (listed by `--list`, never silently skipped):
+Sentinel-2 via CDSE, MERIT Hydro (password by request), CLMS, VIIRS, SNIRH stations.
+
+## Gates
+
+Both Day-0 go/no-go checks are scripts, and both print an unambiguous PASSED/FAILED line.
+
+```bash
+python scripts/smoke_test_weather.py       # Open-Meteo + cache replay
+python scripts/smoke_test_sentinelhub.py   # Sentinel Hub Statistical API
+```
+
+The Sentinel Hub gate needs `SH_CLIENT_ID` / `SH_CLIENT_SECRET` in `.env`; without them
+it prints exactly what to do and exits non-zero. If that gate does not print numbers,
+fix the credentials before anything else - nothing downstream works without it.
+
 ## Layout
 
 ```
 config/      cities/*.yaml, thresholds.yaml, intervention_coefficients.yaml
-core/        settings, structured logging, db session  (shared plumbing)
+core/        settings, structured logging, disk cache, db session
+scripts/     dataset fetcher and the two Day-0 smoke-test gates
 pipeline/    L0 network · L1 satellite · L2 drivers/static · dataset assembly
 models/      LightGBM baseline · SAGE-TS hybrid · anomaly · evaluation
 engine/      alerts · scenarios · priorities · exposure   (pure functions, no I/O)

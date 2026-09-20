@@ -1,8 +1,8 @@
-# Kingfisher — developer entry points.
+# Kingfisher - developer entry points.
 # Requires: docker compose, and a Python 3.11 env with `pip install -e ".[dev]"`.
 
 .DEFAULT_GOAL := help
-.PHONY: help dirs db-up db-down db-migrate db-revision test lint format api
+.PHONY: help dirs data data-list smoke smoke-sat smoke-weather db-up db-down db-migrate db-revision test lint format api
 
 PY ?= python
 
@@ -11,6 +11,20 @@ help:  ## Show available targets
 
 dirs:  ## Recreate the gitignored data directories (fresh clone)
 	mkdir -p data/raw data/interim data/processed
+
+data-list:  ## Show the dataset manifest and what is already on disk
+	$(PY) scripts/fetch_datasets.py --list
+
+data:  ## Download the open-access datasets into data/raw/ (resumable, ~800 MB)
+	$(PY) scripts/fetch_datasets.py
+
+smoke: smoke-sat smoke-weather  ## Run both Day-0 gates
+
+smoke-sat:  ## GATE: Sentinel Hub Statistical API returns numbers
+	$(PY) scripts/smoke_test_sentinelhub.py
+
+smoke-weather:  ## GATE: Open-Meteo returns data and the cache hits on replay
+	$(PY) scripts/smoke_test_weather.py
 
 db-up:  ## Start PostGIS and wait until it is accepting connections
 	docker compose up -d db

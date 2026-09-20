@@ -31,7 +31,8 @@ def test_coimbra_config_has_bbox_and_crs() -> None:
 def test_no_uncited_intervention_coefficients() -> None:
     """Every merged coefficient carries a citation (CLAUDE.md #6). Vacuously true
     while the table is empty; binding from Day 6."""
-    cfg = yaml.safe_load((CONFIG_DIR / "intervention_coefficients.yaml").read_text(encoding="utf-8"))
+    path = CONFIG_DIR / "intervention_coefficients.yaml"
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
     required = set(cfg["schema"]["required_fields"])
     for entry in cfg["interventions"] or []:
         missing = required - set(entry)

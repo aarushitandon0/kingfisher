@@ -6,9 +6,18 @@
 .cdsapirc
 
 # --- Data: everything except the hand-curated reference set ---
+# Downloaded datasets live under data/raw/ and are NEVER committed. As of the first
+# fetch that is ~800 MB: OSM (Overpass JSON + Geofabrik .pbf), Copernicus DEM GLO-30
+# tiles, ESA WorldCover, GHS-POP, Open-Meteo JSON, Sentinel Hub Statistical responses.
+# Re-acquire with:  python scripts/fetch_datasets.py
+# Provenance for every file is tracked in DATA_INVENTORY.md, which IS committed.
 data/raw/
 data/interim/
 data/processed/
+*.part
+*.osm.pbf
+*.tif
+*.tiff
 !data/reference/
 !data/reference/**
 

@@ -165,7 +165,16 @@ Priority order — if time is short, the top three are non-negotiable:
 Update this section as you go so a fresh session knows where things stand.
 
 ```
-Day 0  — [ ] accounts, smoke tests
+Day 0  — [~] repo skeleton, migrations, logging, disk cache  DONE
+         [x] Open-Meteo gate GREEN (87,672 archive rows 2015-2024, 240 forecast rows,
+             cache hit on replay)
+         [x] open datasets on disk, 0.84 GB: OSM Coimbra bbox (620 waterways incl.
+             Ribeira de Coselhas/Antanhol/Eiras, 80 schools, 69 playgrounds),
+             OSM Portugal pbf, CopDEM GLO-30 x4, ESA WorldCover, GHS-POP
+         [ ] CDSE account + OAuth client -> .env, then Sentinel Hub gate  <- BLOCKER
+         [ ] MERIT Hydro password request (CopDEM is the fallback meanwhile)
+         [ ] CLMS + VIIRS registration
+         [ ] SNIRH station IDs -> config/cities/coimbra.yaml
 Day 1  — [ ] L0 network + catchments + observability gate
 Day 2  — [ ] L1 satellite + L2 drivers
 Day 3  — [ ] LightGBM baseline + walk-forward eval        ← first shippable system
