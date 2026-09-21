@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from core.config import load_intervention_coefficients
 from core.logging import get_logger, stage
 from core.settings import CONFIG_DIR, REPO_ROOT
 
@@ -29,14 +30,9 @@ def test_coimbra_config_has_bbox_and_crs() -> None:
 
 
 def test_no_uncited_intervention_coefficients() -> None:
-    """Every merged coefficient carries a citation (CLAUDE.md #6). Vacuously true
-    while the table is empty; binding from Day 6."""
-    path = CONFIG_DIR / "intervention_coefficients.yaml"
-    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    required = set(cfg["schema"]["required_fields"])
-    for entry in cfg["interventions"] or []:
-        missing = required - set(entry)
-        assert not missing, f"{entry.get('name', entry)} is missing {sorted(missing)}"
+    """Every merged coefficient carries a citation (CLAUDE.md #6). The loader raises
+    otherwise; tests/test_coefficients.py breaks each rule on purpose."""
+    assert load_intervention_coefficients().interventions
 
 
 def test_gitignore_excludes_secrets_and_raw_data_but_keeps_reference() -> None:

@@ -197,6 +197,14 @@ Day 5  — [x] EA-LSTM + assimilation + calibration + anomaly + gate   (SAGE-TS 
            Assimilation helps EA-LSTM, adds nothing to LightGBM A. Attribution (IG) not run:
            EA-LSTM is not production. Do not spend Day 6 rescuing the EA-LSTM.
 Day 6  — [ ] scenario engine + API
+           [x] config/intervention_coefficients.yaml: 5 cited levers (buffer, permeable
+           paving, detention, street sweeping, green roofs); daylighting is not_quantified
+           (no effect size in the literature). Load ONLY via core.config.
+           load_intervention_coefficients() (engine/coefficients.py validates; load_config
+           refuses the file). Every number needs a reference whose `supports` claims it.
+           Detention (0.3 %, Emerson 2005) and street sweeping (central 0, Selbig 2007) are
+           honest near-zero effects - do not "fix" them. Costs are in source currency
+           (street sweeping is USD); never convert silently. hybrid_sage.py deleted.
 Day 7  — [ ] frontend: map, detail, alerts
 Day 8  — [ ] frontend: scenarios, validation, Pune        ← feature freeze 18:00
 Day 9  — [ ] docs, FHIR, deploy

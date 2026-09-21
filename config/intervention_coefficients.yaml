@@ -1,28 +1,355 @@
 # Scenario effect sizes. THE MODEL NEVER SUPPLIES THESE (CLAUDE.md #6).
 #
-# Every entry must carry: effect, magnitude, uncertainty_range, citation, applies_to.
-# An uncited coefficient must not be merged. Populated on Day 6 from the stormwater
-# and riparian literature; the table below is the schema plus the intended levers,
-# with magnitudes deliberately left null.
-
-schema:
-  required_fields: [effect, magnitude, uncertainty_range, citation, applies_to]
-  units_note: >
-    magnitude is expressed in the units of the feature it perturbs
-    (percentage points for imperviousness_pct, metres for riparian_width_m,
-    fractional multiplier for index-valued features).
-
-interventions: []
-
-# Intended levers (MASTERSPEC section 9.3). Move each into `interventions` only
-# once it has a real magnitude and a real citation.
+# Loaded ONLY through core.config.load_intervention_coefficients(), which validates the
+# file with engine.coefficients and refuses to load it if any entry is uncited, or if any
+# number in it (magnitude, either uncertainty bound, either cost bound) is not claimed by
+# at least one reference's `supports` list. core.config.load_config() refuses this file.
 #
-#   riparian_buffer_restoration  -> riparian_ndvi_mean up, riparian_width_m up
-#   permeable_paving             -> imperviousness_pct down
-#   detention_basin              -> precip_max_hourly (effective) down
-#   daylighting                  -> observable -> true, riparian_* up
-#   street_sweeping              -> first_flush_index down
-#   green_roofs                  -> imperviousness_pct down (partial)
+# Every number below was checked against the source text (abstract, table or fact sheet)
+# on 2026-09-22; `locator` says where. A secondary summary that disagreed with the
+# primary source was discarded (Selbig & Bannerman: a summary gave 25/30/5 %, the USGS
+# abstract gives 76/63/20 %).
+#
+# OPERATIONS - how magnitude and the scenario's `extent` perturb effect.feature:
+#   subtract_treated_share  new = x - magnitude * extent
+#       extent = percentage points of catchment area treated (must be <= x: you cannot
+#       convert more impervious area than exists). magnitude = fraction of the treated
+#       area's runoff that no longer reaches the stream (dimensionless, 0-1).
+#   floor                   new = max(x, magnitude)       extent unused
+#   scale_down              new = x * (1 - magnitude * extent)
+#       extent = fraction (0-1) of the catchment the programme covers; extent 1 is the
+#       coverage of the cited study. magnitude = fractional reduction (0-1).
+#
+# Derived features are recomputed from perturbed inputs, never perturbed independently:
+# first_flush_index = antecedent_dry_days * precip_max_hourly (pipeline/l2_drivers.py).
+#
+# uncertainty_range is [low, high] in the same units as magnitude, low <= magnitude <= high.
+# The scenario engine samples it; it is not a confidence interval from any one study.
+#
+# COSTS are copied in the currency and price basis of the source. Nothing here is
+# converted or inflated - a EUR total from a USD source must say so, not silently mix.
+
+version: "1.0.0"
+
+allowed_features:
+  - imperviousness_pct
+  - riparian_width_m
+  - precip_max_hourly
+  - first_flush_index
+
+interventions:
+  - id: riparian_buffer_restoration
+    name: Riparian buffer restoration
+    effect:
+      feature: riparian_width_m
+      operation: floor
+      direction: increase
+      unit: metres of vegetated bank per side
+      description: >
+        Restore a vegetated buffer to at least the width at which sediment trapping was
+        optimised in the cited meta-analysis. riparian_width_m is the equivalent
+        vegetated width per side (pipeline/l2_static.py), so the buffer floors it.
+    magnitude: 10.0
+    # The width is a design choice fixed at the cited optimum; the uncertainty in what
+    # that width achieves (45-100 % trapping across >80 experiments; width alone explains
+    # ~29 % of the variation) is outcome uncertainty and is carried by the scenario
+    # engine's interval widening, not by the width.
+    uncertainty_range: [10.0, 10.0]
+    citation:
+      - authors: Liu, X.; Zhang, X.; Zhang, M.
+        year: 2008
+        title: >-
+          Major factors influencing the efficacy of vegetated buffers on sediment
+          trapping: a review and analysis
+        source: Journal of Environmental Quality 37(5), 1667-1674
+        doi: 10.2134/jeq2007.0437
+        locator: >-
+          Abstract ("a 10 m buffer and a 9% slope optimized the sediment trapping
+          capability"); results (model efficacy 95.17 % at 10 m / 9 %; observed efficacy
+          45-100 %; width alone explains ~29 % of variation)
+        supports: [magnitude, uncertainty_low, uncertainty_high]
+    applies_to:
+      reaches: all
+      conditions:
+        - Sediment arriving as overland flow across the buffer. Storm-sewered drainage
+          that discharges through a pipe outfall bypasses the buffer entirely; in
+          piped urban catchments the effect on in-stream turbidity will be smaller than
+          the trapping efficacy suggests.
+        - Evidence is predominantly agricultural filter strips, not urban riparian zones.
+        - riparian_ndvi_mean is NOT perturbed - no cited coefficient links buffer
+          restoration to a Sentinel-2 NDVI change (MASTERSPEC 9.3 lists it; left out
+          until one is found).
+    cost_per_unit:
+      low: 400
+      high: 800
+      currency: EUR
+      unit: hectare of buffer established (capital)
+      price_basis: NWRM compilation, 2015 (source figure European Commission, 2006)
+      maintenance: {low: 75, high: 150, unit: hectare per year}
+      citation:
+        - authors: NWRM project (OIEau et al.) for the European Commission, DG Environment
+          year: 2015
+          title: "Individual NWRM: A2 Buffer strips and hedges"
+          source: Natural Water Retention Measures project, contract 07.0330/2013/659147/SER/ENV.C1
+          url: https://www.nwrm.eu/sites/default/files/nwrm_ressources/a2_-_buffer_strips_and_hedges.pdf
+          locator: >-
+            Cost table - capital "400 to 800 EUR/ha" (establishment of 3 m buffer strip,
+            European Commission 2006); maintenance "75 to 150 EUR/ha"
+          supports: [cost_low, cost_high]
+      note: Agricultural field-margin costs. Urban riparian restoration (land, earthworks)
+        will cost more; treat this as a lower bound.
+
+  - id: permeable_paving
+    name: Permeable paving
+    effect:
+      feature: imperviousness_pct
+      operation: subtract_treated_share
+      direction: decrease
+      unit: fraction of treated area's runoff removed (0-1)
+      description: >
+        Replace impervious paving with permeable paving over `extent` percentage points of
+        the catchment. The treated area stops contributing surface runoff in proportion
+        to magnitude.
+    magnitude: 0.97
+    uncertainty_range: [0.29, 0.98]
+    citation:
+      - authors: Brattebo, B.O.; Booth, D.B.
+        year: 2003
+        title: Long-term stormwater quantity and quality performance of permeable pavement systems
+        source: Water Research 37(18), 4369-4376
+        doi: 10.1016/S0043-1354(03)00410-X
+        locator: >-
+          Abstract ("Virtually all rainwater infiltrated ... almost no surface runoff");
+          results: the largest surface runoff in six years was 4 mm of a 121 mm storm,
+          3 % of precipitation -> at least 0.97 removed
+        supports: [magnitude]
+      - authors: NWRM project (OIEau et al.) for the European Commission, DG Environment
+        year: 2015
+        title: "Individual NWRM: U3 Permeable paving"
+        source: Natural Water Retention Measures project, contract 07.0330/2013/659147/SER/ENV.C1
+        url: https://www.nwrm.eu/sites/default/files/nwrm_ressources/u3_-_permeable_paving_0.pdf
+        locator: >-
+          Effectiveness section, citing Blanc et al. (2012) / Ilgen (2007): "new permeable
+          paving to reduce runoff by 98%, while clogged systems achieved only 29-48%
+          reduction"
+        supports: [uncertainty_low, uncertainty_high]
+      - authors: Drake, J.A.P.; Bradford, A.; Marsalek, J.
+        year: 2013
+        title: >-
+          Review of environmental performance of permeable pavement systems: state of the
+          knowledge
+        source: Water Quality Research Journal 48(3), 203-222
+        doi: 10.2166/wqrjc.2013.055
+        locator: >-
+          Hydrologic performance review: "In the majority of studies, the volume of
+          exfiltrated stormwater is at least 30% smaller than precipitation inputs" -
+          corroborates the clogged-system lower bound
+        supports: [uncertainty_low]
+    applies_to:
+      reaches: all
+      conditions:
+        - Treated extent cannot exceed the reach catchment's current imperviousness_pct.
+        - Central value is one unclogged Seattle site with rainfall intensities typically
+          below 5 mm/h. Coimbra storms are more intense and maintenance is not
+          guaranteed, so the range down to clogged performance (0.29) is sampled.
+        - Low-permeability subsoils need underdrains; performance there is at the low end.
+    cost_per_unit:
+      low: 40
+      high: 90
+      currency: EUR
+      unit: square metre of permeable paving (capital)
+      price_basis: NWRM compilation, 2015 (sources CIRIA 2007, Atkins 2010, Environment Agency 2007)
+      maintenance: {low: 1, high: 5, unit: square metre per year}
+      citation:
+        - authors: NWRM project (OIEau et al.) for the European Commission, DG Environment
+          year: 2015
+          title: "Individual NWRM: U3 Permeable paving"
+          source: Natural Water Retention Measures project, contract 07.0330/2013/659147/SER/ENV.C1
+          url: https://www.nwrm.eu/sites/default/files/nwrm_ressources/u3_-_permeable_paving_0.pdf
+          locator: Costs - "Capital Costs EUR 40-90 / m2"; "Maintenance Costs EUR 1-5 / m2 per year"
+          supports: [cost_low, cost_high]
+
+  - id: detention_basin
+    name: Detention / retention basins
+    effect:
+      feature: precip_max_hourly
+      operation: scale_down
+      direction: decrease
+      unit: fractional reduction of effective peak intensity (0-1)
+      description: >
+        Detention attenuates peak flow; the model has no flow input, so the lever acts on
+        the effective hourly peak intensity (and, through it, on first_flush_index). The
+        cited watershed-scale study found almost no net attenuation from a network of
+        more than 100 site-designed basins.
+    magnitude: 0.003
+    # Upper bound = the study's average; lower bound 0 = no attenuation. The study also
+    # reports that basins "can potentially increase peak flow rates" - that increase is
+    # not quantified in the abstract, so the range is truncated at zero and says so here.
+    uncertainty_range: [0.0, 0.003]
+    citation:
+      - authors: Emerson, C.H.; Welty, C.; Traver, R.G.
+        year: 2005
+        title: Watershed-scale evaluation of a system of storm water detention basins
+        source: Journal of Hydrologic Engineering 10(3), 237-242
+        doi: 10.1061/(ASCE)1084-0699(2005)10:3(237)
+        locator: >-
+          Abstract: "the detention basins reduce watershed-wide peak storm flows by an
+          average of only 0.3%, and can potentially increase peak flow rates"
+        supports: [magnitude, uncertainty_low, uncertainty_high]
+    applies_to:
+      reaches: all
+      conditions:
+        - Site-by-site detention designed to hold post-development peaks at
+          pre-development levels. Catchment-planned, volume-based storage performs
+          better (same study) but has no cited magnitude here.
+        - Pollutant removal at the basin outlet (suspended solids 30-90 %, NWRM U10) is
+          NOT the same quantity as in-stream turbidity and is not applied.
+    cost_per_unit:
+      low: 10
+      high: 110
+      currency: EUR
+      unit: cubic metre of detention storage (capital)
+      price_basis: NWRM compilation, 2015 (sources CIRIA 2007, Atkins 2010, Chocat et al. 2008, Certu 2006)
+      maintenance: {low: 0.5, high: 5, unit: square metre of basin per year}
+      citation:
+        - authors: NWRM project (OIEau et al.) for the European Commission, DG Environment
+          year: 2015
+          title: "Individual NWRM: U10 Detention basins"
+          source: Natural Water Retention Measures project, contract 07.0330/2013/659147/SER/ENV.C1
+          url: https://www.nwrm.eu/sites/default/files/nwrm_ressources/u10_-_detention_basins.pdf
+          locator: Costs - "Capital Costs EUR 10 to 110 per m3 detention volume"; maintenance "EUR 0.5-5 / m2 basin area"
+          supports: [cost_low, cost_high]
+
+  - id: street_sweeping
+    name: Street sweeping programme
+    effect:
+      feature: first_flush_index
+      operation: scale_down
+      direction: decrease
+      unit: fractional reduction of accumulated wash-off load (0-1)
+      description: >
+        Sweeping removes accumulated street dirt, the load a first flush washes off.
+        The cited study measured large street-dirt reductions but no significant
+        reduction in stormwater constituent loads, so the central estimate for the
+        water-quality effect is zero and the street-dirt reduction is the upper bound.
+    magnitude: 0.0
+    uncertainty_range: [0.0, 0.76]
+    citation:
+      - authors: Selbig, W.R.; Bannerman, R.T.
+        year: 2007
+        title: >-
+          Evaluation of street sweeping as a stormwater-quality-management tool in three
+          residential basins in Madison, Wisconsin
+        source: U.S. Geological Survey Scientific Investigations Report 2007-5156
+        url: https://pubs.usgs.gov/sir/2007/5156
+        locator: >-
+          Abstract: "Street-dirt yield was reduced by an average of 76, 63, and 20 percent
+          in the regenerative-air, vacuum-assist, and high-frequency broom basins";
+          constituent loads in runoff showed no significant reduction (only ammonia-N,
+          vacuum-assist basin, changed significantly - an increase)
+        supports: [magnitude, uncertainty_low, uncertainty_high]
+    applies_to:
+      reaches: all
+      conditions:
+        - Upper bound (0.76) assumes regenerative-air sweepers; broom sweepers reached 0.20.
+        - Residential streets with kerbs; the study basins are in a cold climate with
+          winter sanding, which added variability.
+    cost_per_unit:
+      low: 34
+      high: 94
+      currency: USD
+      unit: curb mile swept
+      price_basis: MPCA Minnesota municipal case studies, c. 2021 (not inflated, not converted)
+      citation:
+        - authors: Minnesota Pollution Control Agency
+          year: 2022
+          title: Cost considerations for establishing and maintaining a street sweeping program
+          source: Minnesota Stormwater Manual
+          url: https://stormwater.pca.state.mn.us/cost_considerations_for_establishing_and_maintaining_a_street_sweeping_program
+          locator: >-
+            "$34 and $38/mile for the cities of Mankato and St. Cloud ... the best
+            documented case studies"; "The median street sweeping cost was $94/curb mile"
+          supports: [cost_low, cost_high]
+      note: US municipal costs in USD; no EU source was found. Shown in USD, never
+        silently converted.
+
+  - id: green_roofs
+    name: Green roofs (extensive)
+    effect:
+      feature: imperviousness_pct
+      operation: subtract_treated_share
+      direction: decrease
+      unit: fraction of treated roof runoff retained (0-1)
+      description: >
+        Convert `extent` percentage points of catchment area (roofs) to extensive green
+        roof. Retention is partial and falls with storm size, so the treated area is
+        only partly removed from the effective impervious area.
+    magnitude: 0.50
+    uncertainty_range: [0.15, 0.70]
+    citation:
+      - authors: Stovin, V.; Vesuviano, G.; Kasmin, H.
+        year: 2012
+        title: The hydrological performance of a green roof test bed under UK climatic conditions
+        source: Journal of Hydrology 414-415, 148-161
+        doi: 10.1016/j.jhydrol.2011.10.022
+        locator: >-
+          As reported in NWRM U1: "overall 50% cumulative annual rainfall retention, but
+          reducing to 29% for a 2 year event and 15% for a 16 year event"
+        supports: [magnitude, uncertainty_low]
+      - authors: NWRM project (OIEau et al.) for the European Commission, DG Environment
+        year: 2015
+        title: "Individual NWRM: U1 Green roofs"
+        source: Natural Water Retention Measures project, contract 07.0330/2013/659147/SER/ENV.C1
+        url: https://www.nwrm.eu/sites/default/files/nwrm_ressources/u1_-_green_roofs.pdf
+        locator: >-
+          Effectiveness section: Stovin et al. (2012) figures above; Czemiel Berndtsson
+          (2010) "reductions of 70% in the warm season and 33% in the cold season"
+        supports: [magnitude, uncertainty_low, uncertainty_high]
+    applies_to:
+      reaches: all
+      conditions:
+        - Extent is roof area only and cannot exceed the catchment's imperviousness_pct.
+        - Retention is lowest in the large storms that drive turbidity peaks; the event
+          figures (0.29 for a 2-year event, 0.15 for a 16-year event) matter more for
+          alerts than the annual 0.50.
+    cost_per_unit:
+      low: 25
+      high: 130
+      currency: EUR
+      unit: square metre of extensive green roof (capital)
+      price_basis: NWRM compilation, 2015 (sources Atkins 2010, Mairie de Paris 2014, others)
+      citation:
+        - authors: NWRM project (OIEau et al.) for the European Commission, DG Environment
+          year: 2015
+          title: "Individual NWRM: U1 Green roofs"
+          source: Natural Water Retention Measures project, contract 07.0330/2013/659147/SER/ENV.C1
+          url: https://www.nwrm.eu/sites/default/files/nwrm_ressources/u1_-_green_roofs.pdf
+          locator: Costs - "Capital Costs EUR 25-130 per m2 extensive green roof area"
+          supports: [cost_low, cost_high]
+
+# MASTERSPEC 9.3 levers with NO quantitative coefficient. They are listed so their
+# absence is visible, and they cannot be loaded as interventions (an uncited row is worse
+# than an absent one). Move one into `interventions` only with a real magnitude and a
+# real citation for it.
+not_quantified:
+  - id: daylighting
+    name: Daylighting a culverted reach
+    reason: >
+      The review of deculverting evidence finds benefits are claimed but "the evidence for
+      these impacts is sparse"; it gives no effect size on sediment or chlorophyll that
+      could perturb a model feature. Separately, the MASTERSPEC mapping `observable ->
+      true` does not follow: opening a 3-8 m channel does not give it clean 10 m
+      Sentinel-2 water pixels.
+    citation:
+      - authors: Wild, T.C.; Bernet, J.F.; Westling, E.L.; Lerner, D.N.
+        year: 2011
+        title: >-
+          Deculverting: reviewing the evidence on the 'daylighting' and restoration of
+          culverted rivers
+        source: Water and Environment Journal 25(3), 412-421
+        doi: 10.1111/j.1747-6593.2010.00236.x
+        locator: Abstract
+        supports: []
 
 climate_scenarios: []   # +2C summer mean, +20% rainfall intensity, +30% dry spell - Day 8
 
@@ -30,7 +357,7 @@ climate_scenarios: []   # +2C summer mean, +20% rainfall intensity, +30% dry spe
 # statistical model's features is correlational extrapolation, not a causal
 # experiment (MASTERSPEC section 9.1).
 uncertainty_inflation:
-  interval_widening_factor: null
+  interval_widening_factor: null   # set on Day 6 with the scenario engine
   caveat: >
     Planning estimate. Intervention effect sizes are taken from cited literature and
     applied to a statistical model; this is not a causal experiment. Prediction
