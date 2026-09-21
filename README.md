@@ -80,7 +80,8 @@ config/      cities/*.yaml, thresholds.yaml, intervention_coefficients.yaml
 core/        settings, structured logging, disk cache, db session
 scripts/     dataset fetcher and the two Day-0 smoke-test gates
 pipeline/    L0 network · L1 satellite · L2 drivers/static · dataset assembly
-models/      LightGBM baseline · SAGE-TS hybrid · anomaly · evaluation
+models/      LightGBM baseline · EA-LSTM (NeuralHydrology) · assimilation · calibration ·
+             anomaly · evaluation · head-to-head gate
 engine/      alerts · scenarios · priorities · exposure   (pure functions, no I/O)
 api/         FastAPI app, routes, Pydantic schemas, FHIR export
 frontend/    React + MapLibre (Day 7)
@@ -117,6 +118,31 @@ with stage(log, "l1_satellite", city="coimbra") as s:
 - No replacement for professional monitoring. Kingfisher prioritises it.
 
 Scenario outputs are planning estimates, not predictions, and not causal claims.
+
+## Scenario sensitivity check (P5.4)
+
+The scenario engine perturbs catchment attributes and re-runs the model, so the model's
+response to a perturbed attribute has to point the right way. Check: +10 percentage
+points `imperviousness_pct` on every reach, re-infer the P50 on the first day of each
+month in 2024, and compare (`make h2h`, `results/head_to_head.json` →
+`scenario_sensitivity`). More impervious cover is expected to **raise** turbidity.
+
+| Model | Target | Reaches up | Reaches down | No change | Median change |
+|-------|--------|-----------:|-------------:|----------:|--------------:|
+| LightGBM B (no reach identity, used for scenarios) | turbidity index | 26% | **63%** | 11% | −0.09 (−1.2%) |
+| LightGBM A (production) | turbidity index | 7% | **74%** | 19% | −0.10 (−1.0%) |
+| EA-LSTM | turbidity index | pending - not yet trained | | | |
+
+**LightGBM moves the wrong way on most reaches.** Adding impervious cover lowers its
+turbidity forecast on 63% (B) and 74% (A) of the 353 reaches, by about 1%. The model has
+learned a between-reach association, not the physical response. Only 41-51 observable
+reaches carry targets, most of them on the main river (37 of the 41 training reaches are
+Strahler order 4-5; mean catchment ~1,500 km²) with mostly low imperviousness (mean 8.6%,
+range 3-51% across the training reaches), so imperviousness is confounded
+with everything else that differs between those reaches. Until a model passes this check,
+LightGBM re-inference must not be used to size the imperviousness effect of an
+intervention. Scenario effect sizes come from `config/intervention_coefficients.yaml`
+(cited literature), as the design requires, and not from the model.
 
 ## Attribution
 

@@ -1,0 +1,9 @@
+{
+  "production": "lightgbm",
+  "decided_on": "val",
+  "rule": "not decided",
+  "reason": "EA-LSTM not trained / no hindcast: gate NOT decided, LightGBM stays production",
+  "decided": false,
+  "decided_at": "2026-09-21T11:11:10+00:00",
+  "test_evaluations": 0
+}

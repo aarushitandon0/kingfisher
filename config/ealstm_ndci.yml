@@ -1,0 +1,114 @@
+# NeuralHydrology run config - EA-LSTM + CMAL head, target: ndci, untransformed.
+#
+# models/ealstm.py trains from this file, once per seed in config/modelling.yaml
+# (ealstm.seeds). Per run it overrides only: seed, experiment_name, run_dir, data_dir
+# (absolute), the basin files (absolute), test_end_date (the export's last date), and
+# static_attributes - resolved against the export manifest, which drops any requested
+# attribute that is NULL / constant / a land-cover proxy and records why
+# (config/modelling.yaml ealstm.max_null_reach_fraction). Everything else is used as is.
+#
+# Inputs are a pure driver -> state simulator: NO reach_id (use_basin_id_encoding is
+# off), NO lagged or as-of observation. Reach identity comes only from the statics, so
+# the model can simulate reaches it never saw and a perturbed static means something.
+# tests/test_ealstm_export.py asserts this.
+#
+# Dates are dd/mm/YYYY (NeuralHydrology's format).
+
+experiment_name: ealstm_ndci
+run_dir: artifacts/ealstm/runs
+
+# --- data ---
+dataset: generic
+data_dir: data/processed/nh
+train_basin_file: data/processed/nh/train_reaches.txt
+# Early stopping is on the TRAINING reaches in 2024 - never on the spatial holdout.
+validation_basin_file: data/processed/nh/train_reaches.txt
+test_basin_file: data/processed/nh/all_reaches.txt
+train_start_date: 01/01/2016
+train_end_date: 31/12/2023
+validation_start_date: 01/01/2024
+validation_end_date: 31/12/2024
+test_start_date: 01/01/2025
+test_end_date: 20/09/2026
+
+target_variables:
+  - ndci
+
+dynamic_inputs:
+  - precip_mm
+  - precip_max_hourly
+  - precip_duration_h
+  - temp_mean_c
+  - temp_max_c
+  - soil_moisture
+  - et0
+  - api_7
+  - api_14
+  - api_30
+  - antecedent_dry_days
+  - first_flush_index
+  - temp_low_flow_index
+  - doy_sin
+  - doy_cos
+
+static_attributes:
+  - imperviousness_pct
+  - riparian_ndvi_mean
+  - riparian_width_m
+  - road_density_km_km2
+  - alan_radiance
+  - population
+  - urban_fraction
+  - catchment_area_km2
+  - strahler_order
+
+use_basin_id_encoding: false
+
+# --- model ---
+model: ealstm
+head: cmal
+n_distributions: 3
+hidden_size: 64
+initial_forget_bias: 3
+output_dropout: 0.4
+seq_length: 365
+predict_last_n: 1
+
+# --- training ---
+loss: CMALLoss
+optimizer: Adam
+learning_rate:
+  0: 1.0e-3
+  15: 5.0e-4
+batch_size: 256
+epochs: 30
+clip_gradient_norm: 1
+early_stopping: true
+patience_early_stopping: 5
+minimum_epochs_before_early_stopping: 3
+# NH 1.13 quirk (utils/config.py dynamic_learning_rate): early_stopping: true ALSO switches
+# on ReduceLROnPlateau on the validation loss (patience/factor below), and the fixed
+# schedule above is then only the starting rate (1e-3). dynamic_learning_rate: false is
+# ignored by NH; it is kept so the intent is visible. Recorded in selection.json.
+dynamic_learning_rate: false
+patience_dynamic_learning_rate: 3
+factor_dynamic_learning_rate: 0.5
+
+# --- validation (every epoch; the loss drives early stopping) ---
+validate_every: 1
+metrics: []
+n_samples: 25
+# NH samples are only used for its own validation metrics (none configured); the served
+# distribution is the CMAL mixture itself (models/ealstm.py). No clipping: NDCI is signed.
+negative_sample_handling: none
+cache_validation_data: true
+save_validation_results: false
+
+# --- runtime ---
+device: cpu
+num_workers: 0
+save_weights_every: 1
+log_interval: 5
+log_tensorboard: false
+log_n_figures: 0
+save_train_data: false

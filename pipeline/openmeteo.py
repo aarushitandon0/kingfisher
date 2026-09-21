@@ -71,6 +71,11 @@ class OpenMeteoError(RuntimeError):
     """Raised when Open-Meteo fails or returns nothing usable. We fail loudly."""
 
 
+class ModelRunUnavailable(OpenMeteoError):
+    """The Single Runs archive has no such run (e.g. ecmwf_ifs 2025-08-05 00 UTC). A
+    fact about the archive, not a transient error: recorded and skipped by the caller."""
+
+
 def _get(url: str, params: dict[str, Any]) -> requests.Response:
     """GET with exponential backoff on 429 / 5xx / connection errors.
 
@@ -142,7 +147,14 @@ def _request(url: str, params: dict[str, Any]) -> Any:
             f"Open-Meteo returned HTTP {response.status_code} for {url}\n  {detail}"
         )
 
-    payload = response.json()
+    try:
+        payload = response.json()
+    except ValueError as exc:  # a 200 with a non-JSON body - seen 2026-09-21
+        if "modelRunUnavailable" in response.text:
+            raise ModelRunUnavailable(response.text[:300]) from exc
+        raise OpenMeteoError(
+            f"Open-Meteo returned a non-JSON body for {url}: {response.text[:200]!r}"
+        ) from exc
     # A multi-location request returns a list, one payload per location, in order.
     for item in payload if isinstance(payload, list) else [payload]:
         if item.get("error"):

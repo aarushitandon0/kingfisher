@@ -1,0 +1,111 @@
+==============================================================================================================
+KINGFISHER P5.4 - HEAD-TO-HEAD (calibrated; hindcast with observed weather - upper bound on live skill)
+==============================================================================================================
+
+  VAL  |  ndci
+  model           scope                   n     CRPS      MAE     RMSE   cov80   Brier
+  seasonal_naive  all                 15740   0.1462   0.1462   0.2058       -       -
+  seasonal_naive  h01_03               4728   0.1462   0.1462   0.2057       -       -
+  seasonal_naive  h04_07               6300   0.1461   0.1461   0.2057       -       -
+  seasonal_naive  h08_10               4712   0.1462   0.1462   0.2059       -       -
+  seasonal_naive  spatial_holdout      3040   0.1448   0.1448   0.2107       -       -
+  climatology     all                 15510   0.0802   0.1099   0.1630   0.800  0.0891
+  climatology     h01_03               4659   0.0802   0.1099   0.1629   0.800  0.0891
+  climatology     h04_07               6208   0.0802   0.1099   0.1629   0.800  0.0891
+  climatology     h08_10               4643   0.0803   0.1100   0.1631   0.801  0.0890
+  climatology     spatial_holdout      3030   0.0825   0.1132   0.1730   0.845  0.0962
+  lightgbm        all                 15770   0.0668   0.0914   0.1427   0.800  0.0772
+  lightgbm        h01_03               4737   0.0627   0.0868   0.1363   0.800  0.0733
+  lightgbm        h04_07               6312   0.0673   0.0917   0.1431   0.800  0.0777
+  lightgbm        h08_10               4721   0.0700   0.0956   0.1485   0.800  0.0803
+  lightgbm        spatial_holdout      3040   0.0779   0.1070   0.1710   0.801  0.0912
+  lightgbm+assim  all                 15770   0.0664   0.0910   0.1416   0.800  0.0769
+  lightgbm+assim  h01_03               4737   0.0623   0.0861   0.1342   0.800  0.0725
+  lightgbm+assim  h04_07               6312   0.0668   0.0911   0.1417   0.800  0.0778
+  lightgbm+assim  h08_10               4721   0.0700   0.0956   0.1485   0.800  0.0802
+  lightgbm+assim  spatial_holdout      3040   0.0775   0.1062   0.1696   0.800  0.0915
+
+  VAL  |  turbidity_proxy
+  model           scope                   n     CRPS      MAE     RMSE   cov80   Brier
+  seasonal_naive  all                 15740   8.0233   8.0233  20.1564       -       -
+  seasonal_naive  h01_03               4728   8.0311   8.0311  20.1518       -       -
+  seasonal_naive  h04_07               6300   8.0285   8.0285  20.1556       -       -
+  seasonal_naive  h08_10               4712   8.0084   8.0084  20.1619       -       -
+  seasonal_naive  spatial_holdout      3040   8.2028   8.2028  18.7399       -       -
+  climatology     all                 15510   5.3000   7.0564  15.1981   0.800  0.0759
+  climatology     h01_03               4659   5.3026   7.0589  15.1987   0.800  0.0760
+  climatology     h04_07               6208   5.3041   7.0616  15.2032   0.800  0.0761
+  climatology     h08_10               4643   5.2919   7.0471  15.1909   0.801  0.0756
+  climatology     spatial_holdout      3030   5.2803   7.0584  18.4516   0.782  0.0639
+  lightgbm        all                 15770   4.6734   6.0930  14.4595   0.800  0.0706
+  lightgbm        h01_03               4737   4.5950   5.9844  14.4969   0.800  0.0702
+  lightgbm        h04_07               6312   4.6500   6.0972  14.4214   0.800  0.0703
+  lightgbm        h08_10               4721   4.7834   6.1963  14.4727   0.800  0.0715
+  lightgbm        spatial_holdout      3040   4.8901   6.2060  18.4314   0.810  0.0580
+  lightgbm+assim  all                 15770   4.6744   6.0943  14.4610   0.800  0.0706
+  lightgbm+assim  h01_03               4737   4.5983   5.9888  14.5018   0.800  0.0702
+  lightgbm+assim  h04_07               6312   4.6500   6.0972  14.4214   0.800  0.0703
+  lightgbm+assim  h08_10               4721   4.7834   6.1963  14.4727   0.800  0.0715
+  lightgbm+assim  spatial_holdout      3040   4.8907   6.2067  18.4321   0.810  0.0580
+
+  TEST  |  ndci
+  model           scope                   n     CRPS      MAE     RMSE   cov80   Brier
+  seasonal_naive  all                 32215   0.1474   0.1474   0.2110       -       -
+  seasonal_naive  h01_03               9675   0.1476   0.1476   0.2113       -       -
+  seasonal_naive  h04_07              12886   0.1474   0.1474   0.2110       -       -
+  seasonal_naive  h08_10               9654   0.1471   0.1471   0.2108       -       -
+  seasonal_naive  spatial_holdout      6065   0.1732   0.1732   0.2439       -       -
+  climatology     all                 32095   0.0906   0.1245   0.1802   0.768  0.0749
+  climatology     h01_03               9639   0.0907   0.1247   0.1803   0.767  0.0751
+  climatology     h04_07              12838   0.0906   0.1245   0.1802   0.768  0.0749
+  climatology     h08_10               9618   0.0905   0.1244   0.1801   0.768  0.0748
+  climatology     spatial_holdout      6065   0.1028   0.1441   0.2051   0.775  0.0679
+  lightgbm        all                 32225   0.0752   0.1018   0.1596   0.769  0.0656
+  lightgbm        h01_03               9678   0.0737   0.1001   0.1584   0.762  0.0640
+  lightgbm        h04_07              12890   0.0754   0.1020   0.1596   0.769  0.0657
+  lightgbm        h08_10               9657   0.0766   0.1034   0.1607   0.777  0.0668
+  lightgbm        spatial_holdout      6065   0.0952   0.1289   0.1952   0.734  0.0641
+  lightgbm+assim  all                 32225   0.0754   0.1019   0.1587   0.765  0.0662
+  lightgbm+assim  h01_03               9678   0.0751   0.1017   0.1588   0.751  0.0661
+  lightgbm+assim  h04_07              12890   0.0749   0.1013   0.1578   0.765  0.0660
+  lightgbm+assim  h08_10               9657   0.0763   0.1030   0.1599   0.781  0.0665
+  lightgbm+assim  spatial_holdout      6065   0.0953   0.1287   0.1942   0.727  0.0649
+
+  TEST  |  turbidity_proxy
+  model           scope                   n     CRPS      MAE     RMSE   cov80   Brier
+  seasonal_naive  all                 32215   9.8492   9.8492  22.7571       -       -
+  seasonal_naive  h01_03               9675   9.8447   9.8447  22.7462       -       -
+  seasonal_naive  h04_07              12886   9.8492   9.8492  22.7571       -       -
+  seasonal_naive  h08_10               9654   9.8537   9.8537  22.7681       -       -
+  seasonal_naive  spatial_holdout      6065  14.0264  14.0264  35.0618       -       -
+  climatology     all                 32095   6.3052   8.1141  17.3165   0.770  0.1012
+  climatology     h01_03               9639   6.3064   8.1168  17.3107   0.770  0.1011
+  climatology     h04_07              12838   6.3052   8.1141  17.3165   0.770  0.1012
+  climatology     h08_10               9618   6.3040   8.1115  17.3223   0.770  0.1013
+  climatology     spatial_holdout      6065   8.1243  10.3106  24.9124   0.759  0.1314
+  lightgbm        all                 32225   5.4241   6.9779  15.8502   0.757  0.0927
+  lightgbm        h01_03               9678   5.3451   6.8842  15.7870   0.760  0.0911
+  lightgbm        h04_07              12890   5.4448   7.0189  15.8880   0.745  0.0930
+  lightgbm        h08_10               9657   5.4756   7.0173  15.8628   0.771  0.0937
+  lightgbm        spatial_holdout      6065   7.4267   9.2728  23.9983   0.737  0.1219
+  lightgbm+assim  all                 32225   5.4241   6.9779  15.8505   0.758  0.0927
+  lightgbm+assim  h01_03               9678   5.3451   6.8838  15.7880   0.761  0.0911
+  lightgbm+assim  h04_07              12890   5.4448   7.0189  15.8880   0.745  0.0930
+  lightgbm+assim  h08_10               9657   5.4756   7.0173  15.8628   0.771  0.0937
+  lightgbm+assim  spatial_holdout      6065   7.4267   9.2730  23.9982   0.736  0.1219
+
+==============================================================================================================
+  GATE (decided on validation): production = LIGHTGBM
+  rule: not decided
+  test fold evaluated 0 time(s)
+
+  SCENARIO SENSITIVITY: +10 points imperviousness_pct, every reach
+   LightGBM B.production turbidity_proxy  up 26%  down 63%  flat 11%  median change -0.0885 (-1.2%)
+   LightGBM B.production ndci             up 8%  down 80%  flat 11%  median change -0.0011 (-1.5%)
+   LightGBM A.production turbidity_proxy  up 7%  down 74%  flat 19%  median change -0.1018 (-1.0%)
+   LightGBM A.production ndci             up 0%  down 83%  flat 17%  median change -0.0014 (-6.7%)
+   !!! WRONG SIGN: LightGBM B.production lowers turbidity on 63% of reaches when imperviousness rises
+   !!! WRONG SIGN: LightGBM A.production lowers turbidity on 74% of reaches when imperviousness rises
+
+  ATTRIBUTION SANITY: not computed: EA-LSTM is not production (SHAP from LightGBM is served)
+==============================================================================================================

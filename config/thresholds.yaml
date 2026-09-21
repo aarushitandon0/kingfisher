@@ -65,3 +65,21 @@ guardrails:
     max_abs_standardised_residual: 2.5
     max_outside_fraction: 0.50
     min_residuals: 3
+
+anomaly:
+  # models/anomaly.py - an anomaly is an observation the WEATHER cannot explain (P5.3).
+  # PIT = F(observed) under the production model's UN-assimilated driver -> state
+  # forecast for that date: "what the weather predicts". Both conditions must hold:
+  pit_threshold: 0.975            # PIT above this ...
+  # ... AND observed > P90 + margin * (P90 - P10), in the model's transformed space
+  # (log1p for the turbidity index): a margin relative to the forecast's own spread.
+  p90_margin_fraction: 0.25
+  # A "high reading" is observed > the reach's seasonal threshold (variables.*.percentile
+  # above, fitted before the fold). High + not anomalous = WEATHER_EXPLAINED.
+  # Scoring against data/reference/incidents.csv (or the proxy below):
+  match_window_days: 3            # detection within +/- 3 days of the event ...
+  match_downstream_reaches: 3     # ... on the event's reach or up to 3 reaches downstream
+  min_incidents: 10               # fewer real incidents than this -> score the proxy
+  proxy_percentile: 0.95          # proxy event: obs > reach-season 95th pct (fit period)
+  bootstrap_resamples: 2000       # reach-cluster bootstrap for 95% CIs
+  bootstrap_seed: 20260921

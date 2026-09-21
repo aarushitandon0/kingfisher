@@ -1211,7 +1211,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Walk-forward evaluation vs baselines")
     parser.add_argument("--city", default="coimbra")
     parser.add_argument("--no-db", action="store_true", help="do not write the forecasts table")
+    parser.add_argument(
+        "--head-to-head",
+        action="store_true",
+        help="P5.4: all forecasters, assimilation + calibration, the production gate "
+        "(models/head_to_head.py)",
+    )
     args = parser.parse_args(argv)
+    if args.head_to_head:
+        from models.head_to_head import run
+
+        run(args.city)
+        return 0
     evaluate(args.city, write_db=not args.no_db)
     return 0
 

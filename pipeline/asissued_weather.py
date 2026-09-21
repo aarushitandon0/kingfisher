@@ -53,6 +53,7 @@ import pandas as pd
 
 from core.config import as_date
 from core.logging import get_logger, stage
+from core.settings import DATA_DIR
 from pipeline import openmeteo
 from pipeline.build_dataset import PROCESSED_DIR
 from pipeline.l0_network import load_city_config
@@ -67,6 +68,9 @@ log = get_logger(__name__)
 
 FUTURE_COLUMNS = ["precip_mm", "precip_max_hourly", "first_flush_index", "api_7", "temp_mean_c"]
 MIN_SECONDS_BETWEEN_REQUESTS = 1.2  # 10 locations/request -> <= 500 calls/minute
+# Runs the archive says do not exist - recorded so they are never re-requested, and
+# reported as missing (their issue dates get no as-issued forecast, never a fill).
+UNAVAILABLE_PATH = DATA_DIR / "raw" / "weather" / "single-run_unavailable.json"
 
 
 # ---------------------------------------------------------------------------
@@ -219,24 +223,52 @@ def fetch(city: str, *, end: date | None = None) -> dict[str, Any]:
     counts: Counter[str] = Counter()
     stopped: str | None = None
     last_request = 0.0
+    unavailable: dict[str, str] = (
+        json.loads(UNAVAILABLE_PATH.read_text(encoding="utf-8"))
+        if UNAVAILABLE_PATH.exists()
+        else {}
+    )
     with stage(log, "asissued_fetch", city=city) as counters:
         for i, run in enumerate(runs):
             if openmeteo.cached_single_run(cells, run, cfg["variables"], cfg["model"], cfg["days"]):
                 counts["cached"] += 1
                 continue
+            if run.strftime("%Y-%m-%dT%H:%M") in unavailable:
+                counts["unavailable"] += 1
+                continue
             wait = MIN_SECONDS_BETWEEN_REQUESTS - (time.monotonic() - last_request)
             if wait > 0:
                 time.sleep(wait)
             try:
-                openmeteo.fetch_single_run(
-                    cells,
-                    run,
-                    cfg["variables"],
-                    model=cfg["model"],
-                    days=cfg["days"],
-                    daily_cap=cfg["daily_cap"],
-                    hourly_cap=cfg["hourly_cap"],
-                )
+                for attempt in range(1, 4):
+                    try:
+                        openmeteo.fetch_single_run(
+                            cells,
+                            run,
+                            cfg["variables"],
+                            model=cfg["model"],
+                            days=cfg["days"],
+                            daily_cap=cfg["daily_cap"],
+                            hourly_cap=cfg["hourly_cap"],
+                        )
+                        break
+                    except (openmeteo.CallBudgetExhausted, openmeteo.ModelRunUnavailable):
+                        raise
+                    except openmeteo.OpenMeteoError as exc:
+                        # transient (e.g. a non-JSON 200); nothing was cached, so a retry
+                        # cannot double-count. Third failure propagates - fail loudly.
+                        if attempt == 3:
+                            raise
+                        log.warning(
+                            "asissued.retry", run=str(run), attempt=attempt, error=str(exc)[:200]
+                        )
+                        time.sleep(30 * attempt)
+            except openmeteo.ModelRunUnavailable as exc:
+                unavailable[run.strftime("%Y-%m-%dT%H:%M")] = str(exc)[:200]
+                UNAVAILABLE_PATH.write_text(json.dumps(unavailable, indent=2), encoding="utf-8")
+                counts["unavailable"] += 1
+                log.warning("asissued.run_unavailable", run=str(run))
+                continue
             except openmeteo.CallBudgetExhausted as exc:
                 stopped = str(exc)
                 log.warning("asissued.budget_stop", at_run=str(run), done=i, error=stopped)
@@ -251,7 +283,7 @@ def fetch(city: str, *, end: date | None = None) -> dict[str, Any]:
             cells=len(cells),
             requests=dict(counts),
         )
-    remaining = len(runs) - counts["cached"] - counts["fetched"]
+    remaining = len(runs) - counts["cached"] - counts["fetched"] - counts["unavailable"]
     return {
         "runs_total": len(runs),
         "cells": len(cells),

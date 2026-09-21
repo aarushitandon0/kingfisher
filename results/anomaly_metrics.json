@@ -1,0 +1,86 @@
+{
+  "city": "coimbra",
+  "generated_at": "2026-09-21T11:16:48+00:00",
+  "production_model": "lightgbm",
+  "pit_source": "LightGBM variant B, shortest horizon, quantile CDF (engine.probability)",
+  "weather_label": "hindcast with observed weather - upper bound on live skill",
+  "settings": {
+    "pit_threshold": 0.975,
+    "p90_margin_fraction": 0.25,
+    "match_window_days": 3,
+    "match_downstream_reaches": 3,
+    "min_incidents": 10,
+    "proxy_percentile": 0.95,
+    "bootstrap_resamples": 2000,
+    "bootstrap_seed": 20260921
+  },
+  "reference": "PROXY: observations above the reach-season 95th percentile (not incidents)",
+  "incidents_available": 0,
+  "no_attribution": "labels only; no source or polluter is ever attributed (MASTERSPEC 3)",
+  "by_variable": {
+    "ndci": {
+      "reference": "PROXY: observations above the reach-season 95th percentile (not incidents)",
+      "detections": 175,
+      "events": 272,
+      "precision": 0.811429,
+      "recall": 0.544118,
+      "f1": 0.651417,
+      "ci95": {
+        "precision": [
+          0.741151,
+          0.86331
+        ],
+        "recall": [
+          0.428029,
+          0.65984
+        ],
+        "f1": [
+          0.552517,
+          0.732977
+        ]
+      },
+      "labels": {
+        "NORMAL": 4353,
+        "WEATHER_EXPLAINED": 277,
+        "UNEXPLAINED": 175
+      },
+      "localised": {
+        "False": 73,
+        "True": 54,
+        "None": 48
+      }
+    },
+    "turbidity_proxy": {
+      "reference": "PROXY: observations above the reach-season 95th percentile (not incidents)",
+      "detections": 250,
+      "events": 336,
+      "precision": 0.84,
+      "recall": 0.627976,
+      "f1": 0.718677,
+      "ci95": {
+        "precision": [
+          0.792856,
+          0.891216
+        ],
+        "recall": [
+          0.568436,
+          0.690847
+        ],
+        "f1": [
+          0.673093,
+          0.765348
+        ]
+      },
+      "labels": {
+        "NORMAL": 4284,
+        "WEATHER_EXPLAINED": 271,
+        "UNEXPLAINED": 250
+      },
+      "localised": {
+        "False": 101,
+        "None": 84,
+        "True": 65
+      }
+    }
+  }
+}

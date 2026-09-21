@@ -48,6 +48,11 @@ dependencies = [
   "torch>=2.4",
   "PyWavelets>=1.7",
   "shap>=0.46",
+  # EA-LSTM (P5.1): pinned - models/ealstm.py reads NH 1.13 internals (config, scaler)
+  "neuralhydrology==1.13.0",
+  "xarray>=2024.1",       # NH GenericDataset netCDFs
+  "netCDF4>=1.6",
+  "captum>=0.7",          # integrated gradients on the EA-LSTM (models/ealstm.explain)
   "matplotlib>=3.9",      # observability histogram (scripts/check_observability.py)
 
   # --- Config / logging ---

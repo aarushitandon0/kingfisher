@@ -2,7 +2,7 @@
 # Requires: docker compose, and a Python 3.11 env with `pip install -e ".[dev]"`.
 
 .DEFAULT_GOAL := help
-.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l1-probe l2 static asissued exposure s2-shift dataset train evaluate db-up db-down db-migrate db-revision test lint format api
+.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l1-probe l2 static asissued exposure s2-shift dataset train evaluate nh-export ealstm-smoke ealstm-train ealstm-status colab-bundle hindcast h2h anomaly db-up db-down db-migrate db-revision test lint format api
 
 PY ?= python
 
@@ -64,6 +64,30 @@ train:  ## L3: LightGBM quantile baseline - walk-forward fits + production fit +
 
 evaluate:  ## L3: walk-forward metrics (A/B x oracle/as-issued) -> metrics.json + forecasts table
 	$(PY) -m models.evaluate --city $(or $(city),coimbra)
+
+nh-export:  ## P5.1: modelling frame -> NeuralHydrology GenericDataset (data/processed/nh)
+	$(PY) -m pipeline.export_neuralhydrology --city $(or $(city),coimbra)
+
+ealstm-smoke:  ## P5.1: 1-epoch EA-LSTM end-to-end check (CPU, ~1.5 min)
+	$(PY) -m models.ealstm smoke
+
+ealstm-train:  ## P5.1: 2 targets x 5 seeds on this machine (CPU: hours - prefer Colab)
+	$(PY) -m models.ealstm train --target all --skip-trained
+
+ealstm-status:  ## P5.1: which EA-LSTM members are trained
+	$(PY) -m models.ealstm status
+
+colab-bundle:  ## P5.1: dist/kingfisher_colab.zip for notebooks/ealstm_colab.ipynb
+	$(PY) scripts/make_colab_bundle.py
+
+hindcast:  ## P5.1: EA-LSTM simulations at every OK obs date >= 2024 (needs trained members)
+	$(PY) -m models.ealstm hindcast --city $(or $(city),coimbra)
+
+h2h:  ## P5.4: head-to-head, assimilation + calibration, production gate, sensitivity
+	$(PY) -m models.head_to_head --city $(or $(city),coimbra)
+
+anomaly:  ## P5.3: weather-explained anomaly detector (after h2h)
+	$(PY) -m models.anomaly --city $(or $(city),coimbra)
 
 db-up:  ## Start PostGIS and wait until it is accepting connections
 	docker compose up -d db

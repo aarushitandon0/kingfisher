@@ -111,3 +111,73 @@ evaluation:
   # threshold for that reach-season. The row is counted, not filled.
   min_climatology_obs: 5
   reliability_bins: 10
+
+ealstm:
+  # models/ealstm.py - Entity-Aware LSTM (Kratzert et al. 2019, HESS 23:5089) with a
+  # CMAL head (Klotz et al. 2022, HESS 26:1673), trained through NeuralHydrology.
+  # A pure driver -> state SIMULATOR: no reach_id, no lagged or as-of observation among
+  # its inputs (tests/test_ealstm_export.py asserts both). Satellite information enters
+  # only through models/assimilation.py, after the model.
+  version: "0.1.0"
+  # The NeuralHydrology GenericDataset written by pipeline/export_neuralhydrology.py.
+  nh_dir: data/processed/nh
+  # One NH config per target: config/ealstm_<target>.yml. Inputs are listed there.
+  targets:
+    turbidity_proxy:
+      nh_name: turbidity_log1p
+      # log1p: the index is >= 0 (Nechad form on reflectance) and right-skewed
+      # (median 9.6, max 382). Predictions are back-transformed with expm1; the CDF is
+      # exact under the back-transform because log1p is strictly increasing.
+      transform: log1p
+    ndci:
+      nh_name: ndci
+      transform: identity   # bounded [-1, 1], near-symmetric
+  seeds: [11, 23, 37, 51, 73]
+  # ~20 % of observable reaches with targets are held out entirely - never in a training
+  # or early-stopping basin list. Chosen by sha256(salt + reach_id) order, not by hand.
+  # They measure skill on reaches the model has never seen: the honest proxy for the
+  # driver-only reaches, which have no targets at all.
+  spatial_holdout_fraction: 0.2
+  spatial_holdout_salt: kingfisher-ealstm-holdout-v1
+  # A requested static attribute is DROPPED from the model (with the reason recorded in
+  # the export manifest) if it is NULL on more than this fraction of reaches, has zero
+  # spread, or is a land-cover PROXY listed in baseline_gbm.drop_when_proxy - the same
+  # policy as the LightGBM baseline. A reach with a NULL in a KEPT attribute is not
+  # simulated (listed in the manifest with the attribute); it is never filled.
+  max_null_reach_fraction: 0.05
+  # Early stopping: NH stops after this many epochs without validation-loss improvement;
+  # the weights of the epoch with the lowest validation loss are the ones served.
+  inference_batch_size: 2048
+
+assimilation:
+  # models/assimilation.py - residual assimilation, identical for LightGBM and EA-LSTM.
+  # shift(t+h) = r0 * exp(-age / tau), r0 = observed - P50 at the last OK observation
+  # on or before the issue date, in the transformed target space (log1p for turbidity).
+  # tau is fitted by grid search minimising CRPS on the 2024 validation fold only.
+  tau_grid_days: [0.5, 1, 2, 3, 5, 7, 10, 14, 21, 30, 45, 60, 90]
+  # Older than this -> no correction (matches the alert engine's staleness guardrail,
+  # thresholds.yaml guardrails.staleness_days).
+  max_obs_age_days: 21
+
+calibration:
+  # models/calibration.py - identical for LightGBM and EA-LSTM, fitted on 2024 only.
+  # Split-conformal CQR (Romano, Patterson & Candes 2019) on the P10-P90 interval, per
+  # horizon bucket x observability class, targeting this coverage.
+  target_coverage: 0.80
+  # A (bucket, class) cell with fewer calibration rows than this is not adjusted -
+  # recorded as such, never pooled silently from another cell.
+  min_conformal_rows: 30
+  # Isotonic recalibration of exceedance probabilities, per observability class, ONLY
+  # if the 2024 fold holds at least this many exceedance events for the class.
+  min_exceedance_events: 20
+
+gate:
+  # models/head_to_head.py - P5.4, decided on the 2024 VALIDATION fold, never on test.
+  # EA-LSTM becomes production iff its (calibrated, assimilated) ensemble CRPS beats
+  # LightGBM's (calibrated, assimilated) in >= min_buckets_won of the 3 horizon buckets,
+  # for EVERY target, on shared rows - and its 80% interval coverage is no worse:
+  # |coverage - 0.80| no more than coverage_tolerance above LightGBM's, per target.
+  min_buckets_won: 2
+  coverage_tolerance: 0.0
+  # LightGBM variant compared (A = production fit; B is reported alongside)
+  lightgbm_variant: A
