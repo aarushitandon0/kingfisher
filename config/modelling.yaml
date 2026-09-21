@@ -47,8 +47,35 @@ baseline_gbm:
   # models/baseline_gbm.py. Hyperparameters are fixed a priori, NOT tuned on the val or
   # test fold, and there is no early stopping - early stopping on the evaluation fold
   # would leak it into the model. Change them here, and re-run the whole evaluation.
-  version: "0.1.0"
-  quantiles: [0.1, 0.5, 0.9]
+  version: "0.2.0"
+  # Seven quantiles: engine/probability.py builds the exceedance CDF through all of
+  # them, and models/evaluate.py's CRPS approximation integrates over all of them.
+  quantiles: [0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95]
+  # Two variants, trained and evaluated side by side (MASTERSPEC 9 binding rule):
+  #   A  pooled with reach_id as a categorical - the reach's own learned offset
+  #   B  no reach identity: between-reach differences must come through the static
+  #      attributes. Also drops the reach's own observation history (the as-of values,
+  #      their age, and the upstream observed state), which would otherwise carry the
+  #      reach's level into the model in place of the static attributes. B is what
+  #      scenarios and the Pune transfer use - a reach with no history, or a perturbed
+  #      static attribute, has to mean something to it.
+  variants:
+    A:
+      reach_id: true
+      drop: []
+    B:
+      reach_id: false
+      drop:
+        - turbidity_proxy_asof
+        - ndci_asof
+        - obs_asof_age_days
+        - upstream_state_lag1_turbidity
+        - upstream_state_lag1_ndci
+  # Static features dropped while their value is a land-cover PROXY (a catchment_
+  # attributes flag starting PROXY_). With the WorldCover fallback, urban_fraction is the
+  # same built-up pixel count as imperviousness_pct (x 1/100): a duplicate feature
+  # splits SHAP credit and scenario perturbations between two copies of one number.
+  drop_when_proxy: [urban_fraction]
   horizon_buckets:
     h01_03: [1, 2, 3]
     h04_07: [4, 5, 6, 7]

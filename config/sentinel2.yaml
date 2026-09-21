@@ -26,25 +26,36 @@ geometry:
   # (MNDWI > 0 OR SCL = WATER), cloud/shadow excluded.
   riparian_half_width_m: 30
 
-# Nechad-type single-band turbidity: T = A * rho / (1 - rho / C), rho = B04 reflectance.
+# Nechad-type single-band turbidity index: T = A * rho / (1 - rho / C), rho = B04.
+# Displayed everywhere as "turbidity index" (dimensionless). It is not reported in any
+# turbidity unit - see the caveats.
 #
 # Algorithm: Nechad, B., Ruddick, K. G. & Neukermans, G. (2009). Calibration and
 #   validation of a generic multisensor algorithm for mapping of turbidity in coastal
 #   waters. Proc. SPIE 7473, 74730H. doi:10.1117/12.830700
-# Coefficients (red band): Dogliotti, A. I., Ruddick, K. G., Nechad, B., Doxaran, D. &
-#   Knaeps, E. (2015). A single algorithm to retrieve turbidity from remotely-sensed data
-#   in all coastal and estuarine waters. Remote Sensing of Environment 156, 157-168.
-#   doi:10.1016/j.rse.2014.09.020
+# Coefficients: the Sentinel-2 MSI band B4 (665 nm) turbidity row of ACOLITE's Nechad
+#   calibration table (coefficients provided by B. Nechad 2016-09, tabulated by
+#   Q. Vanhellemont 2016-10), line "TUR  MSI  B4  665  366.14  0.19563":
+#     repository  https://github.com/acolite/acolite
+#     file        data/Shared/algorithms/Nechad/Nechad_calibration_201609.txt
+#     commit      d61c8de5be005dd050b4df3a5742815d014a200e  (2026-09-09)
+#   These replace the Dogliotti et al. (2015) red-band coefficients (A 228.1,
+#   C 0.1641), which were calibrated at 645 nm (MODIS), not at S2 B04's 665 nm.
 #
-# CAVEATS - why this is a PROXY and not FNU:
-#   * the coefficients were calibrated at 645 nm; S2 B04 is centred at 665 nm
-#   * the algorithm expects water-leaving reflectance; L2A is Sen2Cor BOA reflectance,
-#     an atmospheric correction designed for land, not water
+# CAVEATS - why this is an index and not a calibrated turbidity:
+#   * ACOLITE applies these to water-leaving reflectance (rho_w) after its own
+#     aquatic atmospheric correction; L2A here is Sen2Cor BOA reflectance, a land
+#     correction. The band now matches; the input quantity still does not.
 #   * narrow urban channels are mixed pixels (MASTERSPEC 6.1)
-# Verify A and C against Dogliotti et al. (2015) Table 2 before quoting any value.
+#   * no in-situ calibration against Coimbra turbidity measurements exists
 nechad:
-  A: 228.1
-  C: 0.1641
+  A: 366.14
+  C: 0.19563
+  citation:
+    repository: https://github.com/acolite/acolite
+    file: data/Shared/algorithms/Nechad/Nechad_calibration_201609.txt
+    commit: d61c8de5be005dd050b4df3a5742815d014a200e
+    row: "TUR MSI B4 665 366.14 0.19563"
   # Above this fraction of C the denominator collapses and T diverges; such pixels are
   # excluded from the turbidity mean and counted.
   max_rho_fraction_of_C: 0.9
@@ -58,6 +69,28 @@ quality:
   # valid (non-diverging) Nechad value, or when any mean index leaves its physical domain.
   min_turbidity_valid_fraction: 0.5
   riparian_min_pixels: 10
+
+plan:
+  # What a full L1 run requests, in this order. A --max-pu cap stops the run before the
+  # batch that would cross it, so whatever comes last is what a short budget loses.
+  water:
+    # Water indices only where Sentinel-2 can see water (reaches.observable = true, the
+    # Day-1 gate). Driver-only reaches return NO_WATER_PIXELS on every date - paying for
+    # that told us nothing we did not already know.
+    observable_only: true
+    # Recent years first (they are the validation and test folds, and the live-model
+    # context), then back through the training years.
+    years: [2024, 2025, 2026, 2023, 2022, 2021, 2020, 2019, 2018]
+  riparian:
+    # Riparian NDVI is a slow, seasonal attribute: one narrow midsummer window per reach
+    # per year, every reach (observable or not - the buffer is land). Summarised as the
+    # median over clear acquisitions in the window, into riparian_ndvi_window.
+    years: [2024, 2025, 2026, 2023, 2022, 2021, 2020, 2019, 2018]
+    window: ["07-01", "07-31"]
+  # 2016-2017 (S2A only, pre-S2B, older processing baselines) is probed on ONE reach and
+  # reported before anyone pays for it on all of them.
+  pre_2018_probe:
+    years: [2016, 2017]
 
 requests:
   # One request per (reach, calendar year): a completed year is an immutable cache key

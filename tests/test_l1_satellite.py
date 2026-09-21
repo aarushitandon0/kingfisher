@@ -18,6 +18,8 @@ from pipeline.l1_satellite import (
     S2Settings,
     build_reach_rows,
     classify_water,
+    load_settings,
+    nechad_pixel,
     parse_riparian_payload,
     parse_water_payload,
     riparian_evalscript,
@@ -33,8 +35,8 @@ S = S2Settings(
     scl_water=6,
     water_half_width_m=15,
     riparian_half_width_m=30,
-    nechad_a=228.1,
-    nechad_c=0.1641,
+    nechad_a=366.14,
+    nechad_c=0.19563,
     max_rho_fraction_of_c=0.9,
     min_water_pixels=5,
     max_cloud_fraction=0.2,
@@ -287,7 +289,7 @@ def test_year_chunks_cover_the_window_without_overlap() -> None:
 
 def test_evalscripts_embed_config_so_the_hash_tracks_it() -> None:
     script = water_evalscript(S)
-    assert "228.1" in script and "0.1641" in script
+    assert "366.14" in script and "0.19563" in script
     for band in S.bands:
         assert f'"{band}"' in script
     other = water_evalscript(S2Settings(**{**S.__dict__, "nechad_a": 300.0}))
@@ -338,3 +340,83 @@ def test_backoff_gives_up_loudly_after_max_attempts() -> None:
 
     with pytest.raises(_HttpError):
         with_backoff(down, max_attempts=3, base_s=0, max_s=0, label="t", sleep=lambda _: None)
+
+
+# ---------------------------------------------------------------------------
+# turbidity index: coefficients and the divergence guard (OUT_OF_RANGE near C)
+# ---------------------------------------------------------------------------
+def test_turbidity_coefficients_are_acolite_s2_msi_b4_and_cited() -> None:
+    from core.config import load_config
+
+    s2 = load_config("sentinel2")
+    assert s2["nechad"]["A"] == 366.14 and s2["nechad"]["C"] == 0.19563
+    cite = s2["nechad"]["citation"]
+    assert cite["repository"] == "https://github.com/acolite/acolite"
+    assert cite["file"] == "data/Shared/algorithms/Nechad/Nechad_calibration_201609.txt"
+    assert len(cite["commit"]) == 40
+    settings = load_settings("coimbra")
+    assert (settings.nechad_a, settings.nechad_c) == (366.14, 0.19563)
+    # and the evalscript that is actually sent carries them
+    script = water_evalscript(settings)
+    assert "var NECHAD_A = 366.14;" in script and "var NECHAD_C = 0.19563;" in script
+    assert "var RHO_MAX = 0.9 * NECHAD_C;" in script
+
+
+def _row_from_pixels(rhos: list[float]) -> dict[str, Any]:
+    """Aggregate per-pixel red reflectances the way the evalscript + parser do: every
+    pixel is clear water; the turbidity mean is over pixels with a valid index."""
+    valid = [t for t in (nechad_pixel(r, S) for r in rhos) if t is not None]
+    return {
+        "date": "2024-07-01",
+        "data_pixels": len(rhos),
+        "cloud_pixels": 0,
+        "usable_pixels": len(rhos),
+        "water_pixels": len(rhos),
+        "turbidity_valid_pixels": len(valid),
+        "w_mndwi": 0.4,
+        "w_ndci": 0.0,
+        "w_turbidity": sum(valid) / len(valid) if valid else None,
+        "w_B04": sum(rhos) / len(rhos),
+    }
+
+
+def test_turbidity_index_diverges_as_red_reflectance_approaches_c() -> None:
+    c = S.nechad_c
+    values = [nechad_pixel(f * c, S) for f in (0.1, 0.5, 0.8, 0.89)]
+    assert all(v is not None for v in values)
+    assert values == sorted(values)  # monotone
+    # the unguarded formula blows up approaching C: 1/(1 - 0.999) = 1000x
+    assert S.nechad_a * 0.999 * c / (1 - 0.999) > 100 * values[-1]  # type: ignore[operator]
+    for f in (0.9, 0.95, 0.999, 1.0, 1.2):
+        assert nechad_pixel(f * c, S) is None, f"rho = {f} C must be excluded"
+    assert nechad_pixel(-0.01, S) is None
+
+
+@pytest.mark.parametrize(
+    ("fraction_of_c", "expected"),
+    [(0.2, "OK"), (0.6, "OK"), (0.85, "OK"), (0.9, "OUT_OF_RANGE"), (0.97, "OUT_OF_RANGE")],
+)
+def test_out_of_range_fires_as_red_reflectance_approaches_c(
+    fraction_of_c: float, expected: str
+) -> None:
+    """20 clear water pixels, all at rho = fraction * C. At and above the guard every
+    pixel is excluded, the valid fraction drops below min_turbidity_valid_fraction, and
+    the date is OUT_OF_RANGE with NULL values - never a huge number, never zero."""
+    out = classify_water(_row_from_pixels([fraction_of_c * S.nechad_c] * 20), S)
+    assert out is not None and out["quality_flag"] == expected
+    if expected == "OUT_OF_RANGE":
+        assert out["turbidity_proxy"] is None and out["ndci"] is None
+        assert out["water_pixel_count"] == 20  # measured, so still stored
+    else:
+        assert out["turbidity_proxy"] == pytest.approx(nechad_pixel(fraction_of_c * S.nechad_c, S))
+
+
+def test_out_of_range_when_most_pixels_near_c_even_if_some_are_fine() -> None:
+    # 12 of 20 pixels at 0.95 C: only 8 valid (40% < 50%) -> OUT_OF_RANGE
+    rhos = [0.95 * S.nechad_c] * 12 + [0.02] * 8
+    assert classify_water(_row_from_pixels(rhos), S)["quality_flag"] == "OUT_OF_RANGE"  # type: ignore[index]
+    # 8 of 20 near C: 12 valid (60%) -> OK, averaged over the valid pixels only
+    rhos = [0.95 * S.nechad_c] * 8 + [0.02] * 12
+    out = classify_water(_row_from_pixels(rhos), S)
+    assert out is not None and out["quality_flag"] == "OK"
+    assert out["turbidity_proxy"] == pytest.approx(nechad_pixel(0.02, S))

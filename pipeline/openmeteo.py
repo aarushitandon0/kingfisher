@@ -13,13 +13,31 @@ driver of the operational path.
 Cache key is (lat, lon, start, end, variables_hash) — see `core.cache`. Query points
 are the centroid of each reach's upstream catchment, not the reach itself; that is the
 caller's job (pipeline/l2_drivers.py).
+
+LIVE MODEL AND AS-ISSUED RUNS
+-----------------------------
+The live forecast is pinned to one NWP model (`models=ecmwf_ifs`, ECMWF IFS HRES 9 km)
+rather than Open-Meteo's best-match blend, so the live path is the same model whose past
+00 UTC runs are replayed from the Single Runs API (`fetch_single_run`) to measure
+as-issued forecast skill. Skill measured on one model and served from another would be
+a number about nothing.
+
+CALL BUDGET
+-----------
+Open-Meteo's free tier is 10,000 calls/day, 5,000/hour, 600/minute, where one request
+counts as n_locations * ceil(days / 14) * ceil(variables / 10) calls. Every cached meta
+records its weighted `calls`, so the cache directory is the call ledger and
+`weighted_calls_since` answers "how much of today's budget is gone".
 """
 
 from __future__ import annotations
 
+import json
+import math
 import random
 import time
-from datetime import date
+from collections.abc import Sequence
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import requests
@@ -31,6 +49,7 @@ log = get_logger(__name__)
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+SINGLE_RUNS_URL = "https://single-runs-api.open-meteo.com/v1/forecast"
 
 # The driver variables (DATA_SOURCES.md §1.4). Hourly for training, aggregated to daily
 # in l2_drivers — precip_max_hourly in particular needs the hourly series.
@@ -85,7 +104,35 @@ def _get(url: str, params: dict[str, Any]) -> requests.Response:
     raise AssertionError("unreachable")
 
 
-def _request(url: str, params: dict[str, Any]) -> dict[str, Any]:
+def call_weight(n_locations: int, days: int, n_variables: int) -> int:
+    """Open-Meteo's accounting: locations x ceil(days/14) x ceil(variables/10)."""
+    return max(1, n_locations) * max(1, math.ceil(days / 14)) * max(1, math.ceil(n_variables / 10))
+
+
+def _meta_calls(meta: dict[str, Any]) -> int:
+    """Weighted calls of one cached response. Metas written before the ledger existed
+    carry no `calls`; theirs is reconstructed from the request parameters."""
+    if meta.get("calls") is not None:
+        return int(meta["calls"])
+    params = meta.get("params", {})
+    if params.get("endpoint") == "archive":
+        days = (date.fromisoformat(params["end"]) - date.fromisoformat(params["start"])).days + 1
+        return call_weight(1, days, len(HOURLY_VARIABLES))
+    if params.get("endpoint") == "forecast":
+        return call_weight(1, 10 + int(params.get("past_days", 0)), len(HOURLY_VARIABLES))
+    return 1
+
+
+def weighted_calls_since(since: datetime) -> int:
+    """Weighted Open-Meteo calls this cache fetched from the network after `since`."""
+    return sum(
+        _meta_calls(meta)
+        for meta in _cache.iter_meta()
+        if datetime.fromisoformat(meta["fetched_at"]) >= since
+    )
+
+
+def _request(url: str, params: dict[str, Any]) -> Any:
     response = _get(url, params)
 
     if response.status_code != 200:
@@ -96,15 +143,16 @@ def _request(url: str, params: dict[str, Any]) -> dict[str, Any]:
         )
 
     payload = response.json()
-    if payload.get("error"):
-        raise OpenMeteoError(f"Open-Meteo error: {payload.get('reason', payload)}")
-
-    hourly = payload.get("hourly") or {}
-    if not hourly.get("time"):
-        raise OpenMeteoError(
-            f"Open-Meteo returned no hourly timesteps for {url} with params {params}. "
-            "An empty result is a failure, not an empty DataFrame."
-        )
+    # A multi-location request returns a list, one payload per location, in order.
+    for item in payload if isinstance(payload, list) else [payload]:
+        if item.get("error"):
+            raise OpenMeteoError(f"Open-Meteo error: {item.get('reason', item)}")
+        hourly = item.get("hourly") or {}
+        if not hourly.get("time"):
+            raise OpenMeteoError(
+                f"Open-Meteo returned no hourly timesteps for {url} with params {params}. "
+                "An empty result is a failure, not an empty DataFrame."
+            )
     return payload
 
 
@@ -155,9 +203,13 @@ def fetch_forecast(
     *,
     issued: date | str | None = None,
     past_days: int = 0,
+    model: str | None = None,
     refresh: bool = False,
 ) -> tuple[dict[str, Any], bool]:
     """Hourly forecast for the live path. Returns (payload, cache_hit).
+
+    `model` pins one NWP model (e.g. "ecmwf_ifs"); None is Open-Meteo's best-match
+    blend. The live pipeline always pins it - see the module docstring.
 
     `past_days` (<= 92) prepends recent days from the forecast model, which is how the
     live series bridges the few days the archive has not caught up on yet.
@@ -176,6 +228,7 @@ def fetch_forecast(
         "end": f"{issued_s}+{days}d",
         "variables_hash": hash_variables(variables),
         **({"past_days": past_days} if past_days else {}),
+        **({"model": model} if model else {}),
     }
     params = {
         "latitude": lat,
@@ -184,19 +237,116 @@ def fetch_forecast(
         "forecast_days": days,
         "timezone": "UTC",
         **({"past_days": past_days} if past_days else {}),
+        **({"models": model} if model else {}),
     }
     entry = _cache.get_or_fetch(
         key,
         lambda: _request(FORECAST_URL, params),
         slug=(
             f"forecast_{lat:.4f}_{lon:.4f}_{issued_s}_{days}d"
-            f"{f'_p{past_days}' if past_days else ''}_{hash_variables(variables)}"
+            f"{f'_p{past_days}' if past_days else ''}{f'_{model}' if model else ''}"
+            f"_{hash_variables(variables)}"
         ),
         url=FORECAST_URL,
         source="Open-Meteo forecast, CC-BY-4.0",
         refresh=refresh,
     )
     return entry.payload, entry.hit
+
+
+class CallBudgetExhausted(RuntimeError):
+    """The next request would take a rolling weighted call count past its cap."""
+
+
+def single_run_key(
+    points: Sequence[tuple[float, float]],
+    run: datetime,
+    variables: list[str],
+    model: str,
+    days: int,
+) -> dict[str, Any]:
+    return {
+        "endpoint": "single_run",
+        "model": model,
+        "run": run.strftime("%Y-%m-%dT%H:%M"),
+        "points": [[round(lat, 5), round(lon, 5)] for lat, lon in points],
+        "forecast_days": days,
+        "variables_hash": hash_variables(variables),
+    }
+
+
+def _run_slug(run: datetime, model: str) -> str:
+    return f"single-run_{model}_{run.strftime('%Y-%m-%dT%H')}"
+
+
+def cached_single_run(
+    points: Sequence[tuple[float, float]],
+    run: datetime,
+    variables: list[str],
+    model: str,
+    days: int,
+) -> list[dict[str, Any]] | None:
+    entry = _cache.get(single_run_key(points, run, variables, model, days), _run_slug(run, model))
+    return None if entry is None else list(entry.payload)
+
+
+def fetch_single_run(
+    points: Sequence[tuple[float, float]],
+    run: datetime,
+    variables: list[str],
+    *,
+    model: str = "ecmwf_ifs",
+    days: int = 11,
+    daily_cap: int = 9000,
+    hourly_cap: int = 4500,
+    refresh: bool = False,
+) -> tuple[list[dict[str, Any]], bool]:
+    """One archived NWP run exactly as issued, for every point in ONE request (the
+    Single Runs API accepts coordinate lists). Returns (payload per point, cache_hit).
+
+    Before a network call the rolling 24 h and 1 h weighted call counts are checked
+    against the caps; exceeding either raises CallBudgetExhausted. The caller stops, and
+    every run already fetched stays cached.
+    """
+    key = single_run_key(points, run, variables, model, days)
+    slug = _run_slug(run, model)
+    if not refresh:
+        entry = _cache.get(key, slug)
+        if entry is not None:
+            return list(entry.payload), True
+    calls = call_weight(len(points), days, len(variables))
+    now = datetime.now(UTC)
+    day_used = weighted_calls_since(now - timedelta(hours=24))
+    hour_used = weighted_calls_since(now - timedelta(hours=1))
+    if day_used + calls > daily_cap or hour_used + calls > hourly_cap:
+        raise CallBudgetExhausted(
+            f"Open-Meteo budget: {day_used} weighted calls in the last 24 h (cap {daily_cap}), "
+            f"{hour_used} in the last hour (cap {hourly_cap}); the next request costs {calls}."
+        )
+    params = {
+        "latitude": ",".join(str(lat) for lat, _ in points),
+        "longitude": ",".join(str(lon) for _, lon in points),
+        "models": model,
+        "run": key["run"],
+        "hourly": ",".join(variables),
+        "forecast_days": days,
+        "timezone": "UTC",
+    }
+    payload = _request(SINGLE_RUNS_URL, params)
+    payloads = payload if isinstance(payload, list) else [payload]
+    if len(payloads) != len(points):
+        raise OpenMeteoError(
+            f"run {key['run']}: asked for {len(points)} points, got {len(payloads)}"
+        )
+    _cache.put(
+        key,
+        payloads,
+        slug=slug,
+        url=SINGLE_RUNS_URL,
+        source=f"Open-Meteo Single Runs API, {model} run {key['run']}, CC-BY-4.0",
+        extra_meta={"calls": calls, "request": json.dumps(params)},
+    )
+    return payloads, False
 
 
 def summarise_hourly(payload: dict[str, Any]) -> dict[str, Any]:

@@ -33,10 +33,12 @@ WHY riparian_ndvi_mean COMES FROM SENTINEL-2 FOR EVERY ADAPTER
 ------------------------------------------------------------
 CLMS Riparian Zones delineates riparian zones and their land cover; it has no NDVI band,
 and neither does WorldCover. NDVI is an optical measurement, and L1 already measures it
-on every reach's 30 m riparian buffer. The catchment value is the length-weighted mean,
-over the reaches inside the catchment, of each reach's climatological NDVI (mean of
-monthly means, dates <= splits.train_end only so no test-year observation leaks into a
-static feature).
+on every reach's 30 m riparian buffer - once per reach per year, as the median over the
+clear acquisitions of a narrow midsummer window (table riparian_ndvi_window). A reach's
+value is the mean of its yearly midsummer medians over windows ending <= splits.train_end
+(no test-year observation leaks into a static feature); the catchment value is the
+length-weighted mean over the reaches inside the catchment. It is a MIDSUMMER NDVI, not
+an annual mean, and is labelled as such in `sources`.
 
 NULLS
 -----
@@ -687,16 +689,15 @@ def road_density(ctx: CatchmentContext, roads: Sequence[LineString]) -> dict[str
     return out
 
 
-def reach_riparian_climatology(obs: pd.DataFrame, train_end: Any) -> pd.Series:
-    """Per reach: mean of monthly means of OK riparian NDVI, dates <= train_end.
-    Monthly first so cloud-free summers do not dominate the average."""
-    ok = obs[(obs["riparian_flag"] == "OK") & obs["riparian_ndvi"].notna()].copy()
-    ok = ok[pd.to_datetime(ok["obs_date"]) <= pd.Timestamp(train_end)]
+def reach_riparian_climatology(windows: pd.DataFrame, train_end: Any) -> pd.Series:
+    """Per reach: mean of the yearly midsummer-window medians (riparian_ndvi_window,
+    flag OK) whose window ends <= train_end. A year with no clear acquisition is absent,
+    not zero."""
+    ok = windows[(windows["flag"] == "OK") & windows["riparian_ndvi_median"].notna()]
+    ok = ok[pd.to_datetime(ok["window_end"]) <= pd.Timestamp(train_end)]
     if ok.empty:
         return pd.Series(dtype=float)
-    ok["month"] = pd.to_datetime(ok["obs_date"]).dt.month
-    monthly = ok.groupby(["reach_id", "month"])["riparian_ndvi"].mean()
-    return monthly.groupby(level="reach_id").mean()
+    return ok.groupby("reach_id")["riparian_ndvi_median"].mean()
 
 
 def riparian_ndvi_mean(
@@ -705,7 +706,10 @@ def riparian_ndvi_mean(
     reach_lines: dict[str, LineString],
     study_bbox: tuple[float, float, float, float],
 ) -> dict[str, AttributeValue]:
-    source = "Sentinel-2 L2A riparian NDVI (L1, 30 m buffer, water excluded); length-weighted"
+    source = (
+        "Sentinel-2 L2A midsummer riparian NDVI (L1 July-window medians, 30 m buffer, water "
+        "excluded), mean over training years; length-weighted"
+    )
     points = {rid: line.representative_point() for rid, line in reach_lines.items()}
     lengths = {rid: ctx.to_metric(line).length for rid, line in reach_lines.items()}
     study = box(*study_bbox)
@@ -969,8 +973,8 @@ def build_static_attributes(
         attempt("alan_radiance", lambda: alan_radiance(ctx))
         attempt("road_density_km_km2", lambda: road_density(ctx, roads))
 
-        obs = load_riparian_observations(city)
-        reach_ndvi = reach_riparian_climatology(obs, train_end)
+        windows = load_riparian_windows(city)
+        reach_ndvi = reach_riparian_climatology(windows, train_end)
         results["riparian_ndvi_mean"] = riparian_ndvi_mean(
             ctx, reach_ndvi, lines, bbox_tuple(city_cfg)
         )
@@ -1021,7 +1025,7 @@ def build_static_attributes(
     }
 
 
-def load_riparian_observations(city: str) -> pd.DataFrame:
+def load_riparian_windows(city: str) -> pd.DataFrame:
     from sqlalchemy import text
 
     from core.db import session_scope
@@ -1029,9 +1033,9 @@ def load_riparian_observations(city: str) -> pd.DataFrame:
     with session_scope() as session:
         return pd.read_sql(
             text(
-                "SELECT o.reach_id, o.obs_date, o.riparian_ndvi, o.riparian_flag "
-                "FROM observations o "
-                "JOIN reaches r USING (reach_id) WHERE r.city = :city AND o.source = 'S2'"
+                "SELECT w.reach_id, w.year, w.window_end, w.riparian_ndvi_median, w.flag "
+                "FROM riparian_ndvi_window w "
+                "JOIN reaches r USING (reach_id) WHERE r.city = :city"
             ),
             session.connection(),
             params={"city": city},

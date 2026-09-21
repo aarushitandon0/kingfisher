@@ -1,0 +1,161 @@
+{
+  "city": "coimbra",
+  "s2c_era_start": "2025-01-21",
+  "platform_counts": {
+    "PRE_S2C": {
+      "S2B": 5969,
+      "S2A": 4953,
+      "MIXED": 60
+    },
+    "S2C_ERA": {
+      "MIXED": 1311,
+      "S2C": 1012,
+      "S2A": 737,
+      "S2B": 99
+    }
+  },
+  "method": "per reach-month median (pre-S2C) removed; MIXED platform days excluded",
+  "variables": {
+    "turbidity_proxy": {
+      "contemporaneous_S2C_minus_S2B": {
+        "n_a": 1012,
+        "n_b": 99,
+        "mean_a": 3.9403756696504018,
+        "mean_b": 2.603346553053323,
+        "mean_diff": 1.337029116597079,
+        "ci95": [
+          -3.334928531240583,
+          5.30168613176543
+        ],
+        "median_diff": 0.6279673756754285,
+        "effect_size_d": 0.06619459007701317,
+        "mann_whitney_p": 0.07920039001828795,
+        "verdict": "NO_DETECTABLE_SHIFT"
+      },
+      "reference_pre_S2A_minus_S2B": {
+        "n_a": 4953,
+        "n_b": 5969,
+        "mean_a": 3.4294704653136114,
+        "mean_b": 3.803495523410509,
+        "mean_diff": -0.37402505809689757,
+        "ci95": [
+          -1.0422754387280038,
+          0.28827779026200995
+        ],
+        "median_diff": 0.0,
+        "effect_size_d": -0.02200946377291594,
+        "mann_whitney_p": 0.21799285773483257,
+        "verdict": "NO_DETECTABLE_SHIFT"
+      },
+      "before_after_confounded_S2C_era_minus_pre": {
+        "n_a": 3159,
+        "n_b": 10982,
+        "mean_a": 1.8940463164366046,
+        "mean_b": 3.6051890361797843,
+        "mean_diff": -1.7111427197431797,
+        "ci95": [
+          -2.3800046533359915,
+          -0.9998648410028563
+        ],
+        "median_diff": -1.5011677874459162,
+        "effect_size_d": -0.10026123821360565,
+        "mann_whitney_p": 1.4055647105944047e-48,
+        "verdict": "SHIFT"
+      }
+    },
+    "ndci": {
+      "contemporaneous_S2C_minus_S2B": {
+        "n_a": 1012,
+        "n_b": 99,
+        "mean_a": -0.08511932204869167,
+        "mean_b": -0.04648255974577588,
+        "mean_diff": -0.038636762302915795,
+        "ci95": [
+          -0.05763357695455121,
+          -0.019426823979337756
+        ],
+        "median_diff": -0.017687466422647194,
+        "effect_size_d": -0.2932906719976057,
+        "mann_whitney_p": 0.10870364670854389,
+        "verdict": "SHIFT"
+      },
+      "reference_pre_S2A_minus_S2B": {
+        "n_a": 4953,
+        "n_b": 5969,
+        "mean_a": -0.0006330562369791346,
+        "mean_b": -0.010513380678264902,
+        "mean_diff": 0.009880324441285768,
+        "ci95": [
+          0.0049342590940184144,
+          0.014880002469344403
+        ],
+        "median_diff": 0.0,
+        "effect_size_d": 0.07530777698805557,
+        "mann_whitney_p": 0.782665762318028,
+        "verdict": "SHIFT"
+      },
+      "before_after_confounded_S2C_era_minus_pre": {
+        "n_a": 3159,
+        "n_b": 10982,
+        "mean_a": -0.06999686153538612,
+        "mean_b": -0.0057831829522305925,
+        "mean_diff": -0.06421367858315552,
+        "ci95": [
+          -0.07033936704345213,
+          -0.05797870237447526
+        ],
+        "median_diff": -0.04672052369809114,
+        "effect_size_d": -0.4307816413035486,
+        "mann_whitney_p": 1.8215479154881533e-97,
+        "verdict": "SHIFT"
+      }
+    },
+    "mndwi": {
+      "contemporaneous_S2C_minus_S2B": {
+        "n_a": 1012,
+        "n_b": 99,
+        "mean_a": -0.03548159445708633,
+        "mean_b": -0.053802631427414455,
+        "mean_diff": 0.018321036970328122,
+        "ci95": [
+          -0.010543403968185972,
+          0.04672486994262854
+        ],
+        "median_diff": 0.031032292740653007,
+        "effect_size_d": 0.12642103824059095,
+        "mann_whitney_p": 0.1806140978948504,
+        "verdict": "NO_DETECTABLE_SHIFT"
+      },
+      "reference_pre_S2A_minus_S2B": {
+        "n_a": 4953,
+        "n_b": 5969,
+        "mean_a": -0.033860999506304036,
+        "mean_b": 0.041840731896279036,
+        "mean_diff": -0.07570173140258307,
+        "ci95": [
+          -0.08035901564231729,
+          -0.07090125235881684
+        ],
+        "median_diff": -0.06299324748855267,
+        "effect_size_d": -0.5956340242809163,
+        "mann_whitney_p": 9.975675058805626e-200,
+        "verdict": "SHIFT"
+      },
+      "before_after_confounded_S2C_era_minus_pre": {
+        "n_a": 3159,
+        "n_b": 10982,
+        "mean_a": -0.006349426883231828,
+        "mean_b": 0.006578505120893038,
+        "mean_diff": -0.012927932004124867,
+        "ci95": [
+          -0.018722389526749438,
+          -0.007031519522885019
+        ],
+        "median_diff": -0.022119010444857812,
+        "effect_size_d": -0.09077551665087606,
+        "mann_whitney_p": 1.5515473438653112e-11,
+        "verdict": "SHIFT"
+      }
+    }
+  }
+}

@@ -197,18 +197,19 @@ def test_road_density_km_per_km2() -> None:
 
 
 def test_riparian_climatology_excludes_post_training_and_non_ok() -> None:
-    obs = pd.DataFrame(
+    windows = pd.DataFrame(
         [
-            ("R1", date(2023, 1, 10), 0.2, "OK"),
-            ("R1", date(2023, 1, 20), 0.4, "OK"),  # January mean 0.3
-            ("R1", date(2023, 7, 10), 0.7, "OK"),  # July mean 0.7
-            ("R1", date(2023, 7, 11), 0.9, "CLOUD"),  # not OK - ignored
-            ("R1", date(2024, 7, 10), -1.0, "OK"),  # after train_end - must not leak in
+            ("R1", 2022, date(2022, 7, 31), 0.6, "OK"),
+            ("R1", 2023, date(2023, 7, 31), 0.8, "OK"),
+            ("R1", 2021, date(2021, 7, 31), None, "NO_CLEAR_ACQUISITION"),  # absent, not 0
+            ("R1", 2024, date(2024, 7, 31), -1.0, "OK"),  # after train_end - must not leak
+            ("R2", 2022, date(2022, 7, 31), None, "NO_ACQUISITION"),
         ],
-        columns=["reach_id", "obs_date", "riparian_ndvi", "riparian_flag"],
+        columns=["reach_id", "year", "window_end", "riparian_ndvi_median", "flag"],
     )
-    out = reach_riparian_climatology(obs, date(2023, 12, 31))
-    assert out["R1"] == pytest.approx(0.5)  # mean of monthly means (0.3, 0.7)
+    out = reach_riparian_climatology(windows, date(2023, 12, 31))
+    assert out["R1"] == pytest.approx(0.7)  # mean of the 2022 and 2023 midsummer medians
+    assert "R2" not in out.index
 
 
 def test_assembled_rows_carry_sources_and_reasons_never_zero_fill() -> None:

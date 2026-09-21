@@ -3,23 +3,38 @@ reported, favourable or not.
 
 Run (after `python -m models.baseline_gbm --city coimbra`):
 
-    python -m models.evaluate --city coimbra
+    python -m models.evaluate --city coimbra            # also writes the forecasts table
+    python -m models.evaluate --city coimbra --no-db
 
-Writes results/metrics.json and results/figures/*.png and prints the comparison table.
-Wherever the model is worse than a baseline, the table says LOSES and the loss is listed
-again at the end and in metrics.json["losses"]. Nothing is dropped to make that list
-shorter.
+Writes results/metrics.json and results/figures/*.png, prints the comparison table, and
+persists every walk-forward prediction (both variants, both weather inputs, all seven
+quantiles) to the `forecasts` table. Wherever a model is worse than a baseline, the
+table says LOSES and the loss is listed again at the end and in metrics.json["losses"].
+Nothing is dropped to make that list shorter.
+
+RUNS - four, scored separately, compared on shared rows
+-------------------------------------------------------
+  A/ORACLE     variant A (reach_id feature), t+h drivers from the archive (perfect
+               prognosis) - the headline table, metrics.json["folds"]
+  A/ASISSUED   variant A, t+h drivers rebuilt from the ECMWF IFS 00 UTC run issued on
+               the issue date (pipeline.asissued_weather; available from 2024-03-14)
+  B/ORACLE     variant B (no reach identity), archive drivers
+  B/ASISSUED   variant B, as-issued drivers
+metrics.json["runs"] holds all four. Comparisons are always on the rows both sides have:
+  variant_comparison   A vs B (per weather input)
+  weather_comparison   ORACLE vs ASISSUED (per variant) - what forecast error costs
+  reach_id_shap_share  in A, mean |SHAP(reach_id)| / sum of mean |SHAP| over features
 
 FORECASTERS - scored on the same (reach, issue date, horizon) rows
 ------------------------------------------------------------------
-  model           P10/P50/P90 from models.baseline_gbm (walk-forward fits)
+  model           the quantile forecast from models.baseline_gbm (walk-forward fits)
   seasonal_naive  the observation closest to the target's day-of-year in the most recent
                   previous year that has one within +/- seasonal_naive_window_days.
                   A point forecast. Always dated before the issue date.
   climatology     the reach's training-fold observations within +/- climatology_window_days
                   of the target's day-of-year, all training years pooled: mean as the point,
-                  empirical 10/50/90% quantiles as the interval. NULL if fewer than
-                  min_climatology_obs - counted, never filled.
+                  empirical quantiles at the model's levels as the distribution. NULL if
+                  fewer than min_climatology_obs - counted, never filled.
 
 The headline skill comparison uses rows where all three forecasters exist ("common
 rows"); the model is also reported on all of its rows, and each baseline's coverage is
@@ -28,24 +43,27 @@ stated, so a baseline that is missing where the model is weak cannot flatter it.
 METRICS
 -------
   MAE, RMSE        on the point forecast (model P50, climatology mean, seasonal-naive value)
-  CRPS             quantile-score approximation over alpha in {0.1, 0.5, 0.9}:
-                   CRPS ~= (2/K) * sum_k pinball_alpha_k(y, q_k). Applied identically to all
-                   three forecasters; for a point forecast it reduces exactly to MAE. With
-                   three quantiles it is coarse - it ranks forecasters fairly, but it is not
-                   the integral CRPS and is not labelled as one.
-  coverage_80      fraction of observations inside P10-P90 (nominal 0.80)
+  CRPS             quantile-score quadrature over the K forecast levels:
+                     CRPS ~= 2 * sum_k w_k * pinball_{alpha_k}(y, q_k)
+                   with w_k the width of the alpha-interval nearest alpha_k (midpoints
+                   between adjacent levels, 0 and 1 at the ends; the weights sum to 1).
+                   For the seven levels 0.05/0.1/0.25/0.5/0.75/0.9/0.95 the weights are
+                   0.075/0.1/0.2/0.25/0.2/0.1/0.075. Applied identically to all three
+                   forecasters; for a point forecast and symmetric levels it reduces
+                   exactly to MAE. It is an approximation, not the integral CRPS, and is
+                   labelled as one.
+  coverage_80/90   fraction of observations inside P10-P90 (nominal 0.80) / P05-P95 (0.90)
   skill vs B       1 - metric_model / metric_B   (> 0: model better)
 
 PROBABILITY CALIBRATION
 -----------------------
-The event is observed > threshold, the threshold being what config/thresholds.yaml says:
-the absolute value if one is set, otherwise the reach's seasonal percentile of its
-training-fold observations (same window as climatology). The forecast probability comes
-from engine.probability.exceedance_probability - the same function the alert engine
-alerts with. Reported: reliability-diagram bins, Brier score, Brier skill vs the
-climatological exceedance frequency, and the hit / false-alarm counts at the
-min_exceedance_prob operating point BEFORE guardrails (the alert engine's guardrails do
-not exist yet).
+The event is observed > threshold, the threshold being the reach's own seasonal
+percentile of its training-fold observations (engine/thresholds.py, config/thresholds.yaml)
+- the same table the alert engine uses. The forecast probability comes from
+engine.probability.exceedance_probability_multi over all K quantiles - the same function
+the alert engine alerts with. Reported: reliability-diagram bins, Brier score, Brier
+skill vs the reach-season's climatological exceedance frequency, and hit / false-alarm
+counts at the min_exceedance_prob operating point BEFORE guardrails.
 """
 
 from __future__ import annotations
@@ -53,6 +71,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -63,8 +82,10 @@ import pandas as pd
 from core.config import load_config
 from core.logging import get_logger, stage
 from core.settings import REPO_ROOT
-from engine.probability import exceedance_probability
-from models.baseline_gbm import GBMSettings, file_sha256, frame_path, load_frame
+from engine.probability import exceedance_probability_multi
+from engine.thresholds import lookup as threshold_lookup
+from engine.thresholds import seasonal_thresholds
+from models.baseline_gbm import GBMSettings, file_sha256, frame_path, load_frame, qname
 from pipeline.build_dataset import PROCESSED_DIR, FrameSettings
 
 log = get_logger(__name__)
@@ -73,13 +94,18 @@ RESULTS_DIR = REPO_ROOT / "results"
 FIGURES_DIR = RESULTS_DIR / "figures"
 FORECASTERS = ("model", "seasonal_naive", "climatology")
 BASELINES = ("seasonal_naive", "climatology")
-ALPHAS = (0.1, 0.5, 0.9)
 LOSS_METRICS = ("mae", "rmse", "crps")
 MIN_REACH_ROWS = 5  # per-reach comparison needs at least this many common rows
+HEADLINE = "A/ORACLE"
+KEYS = ["fold", "variable", "reach_id", "issued_date", "horizon"]
 
 
 class NoEvaluationData(RuntimeError):
     """There is nothing honest to score."""
+
+
+def display_names(thresholds: dict[str, Any]) -> dict[str, str]:
+    return {v: c.get("display_name", v) for v, c in thresholds["variables"].items()}
 
 
 # ---------------------------------------------------------------------------
@@ -162,12 +188,12 @@ def climatology(
     train_end: date,
     window_days: int,
     min_obs: int,
-    threshold_percentile: float | None,
+    levels: Sequence[float] = (0.1, 0.5, 0.9),
 ) -> pd.DataFrame:
-    """Per target row: mean, q10, q50, q90, n, and - if threshold_percentile is set -
-    the seasonal threshold and the climatological exceedance frequency above it.
+    """Per target row: mean, the empirical quantiles q<level> at `levels`, and n.
     Uses only observations dated <= train_end."""
-    cols = ["mean", "q10", "q50", "q90", "n", "threshold", "clim_exceed_freq"]
+    qcols = [f"q{round(a * 100):02d}" for a in levels]
+    cols = ["mean", *qcols, "n"]
     out = pd.DataFrame(np.nan, index=range(len(targets)), columns=cols)
     out["n"] = 0
     train = obs[obs["date"] <= pd.Timestamp(train_end)]
@@ -193,11 +219,7 @@ def climatology(
         sample = np.where(near[enough], vals[None, :], np.nan)
         r = rows[enough]
         out.loc[r, "mean"] = np.nanmean(sample, axis=1)
-        out.loc[r, ["q10", "q50", "q90"]] = np.nanquantile(sample, ALPHAS, axis=1).T
-        if threshold_percentile is not None:
-            thr = np.nanquantile(sample, threshold_percentile, axis=1)
-            out.loc[r, "threshold"] = thr
-            out.loc[r, "clim_exceed_freq"] = (sample > thr[:, None]).sum(axis=1) / n[enough]
+        out.loc[r, qcols] = np.nanquantile(sample, list(levels), axis=1).T
     return out
 
 
@@ -209,43 +231,63 @@ def pinball(y: np.ndarray, q: np.ndarray, alpha: float) -> np.ndarray:
     return np.asarray(np.maximum(alpha * d, (alpha - 1) * d))
 
 
-def crps_quantile(y: np.ndarray, q10: np.ndarray, q50: np.ndarray, q90: np.ndarray) -> np.ndarray:
-    """(2/K) * sum_k pinball - see module docstring. Equals |y - x| when q10=q50=q90=x."""
-    qs = (q10, q50, q90)
+def crps_weights(levels: Sequence[float]) -> np.ndarray:
+    """Quadrature weights: the width of the alpha-interval nearest each level."""
+    lv = np.asarray(levels, dtype="float64")
+    edges = np.concatenate([[0.0], (lv[1:] + lv[:-1]) / 2, [1.0]])
+    return np.diff(edges)
+
+
+def crps_quantile(
+    y: np.ndarray, quantiles: Sequence[np.ndarray], levels: Sequence[float]
+) -> np.ndarray:
+    """2 * sum_k w_k * pinball_k - see the module docstring. Equals |y - x| when every
+    quantile is x and the levels are symmetric about 0.5."""
+    if len(quantiles) != len(levels):
+        raise ValueError(f"{len(quantiles)} quantile arrays for {len(levels)} levels")
+    w = crps_weights(levels)
     return np.asarray(
-        2.0 * np.mean([pinball(y, q, a) for q, a in zip(qs, ALPHAS, strict=True)], axis=0)
+        2.0 * sum(wk * pinball(y, q, a) for wk, q, a in zip(w, quantiles, levels, strict=True))
     )
 
 
 def point_scores(
-    y: np.ndarray, point: np.ndarray, q: tuple[np.ndarray, ...] | None
+    y: np.ndarray,
+    point: np.ndarray,
+    q: Sequence[np.ndarray] | None,
+    levels: Sequence[float],
 ) -> dict[str, Any]:
     err = point - y
-    q = q or (point, point, point)
+    qs = list(q) if q is not None else [point] * len(levels)
     out: dict[str, Any] = {
         "mae": float(np.mean(np.abs(err))),
         "rmse": float(np.sqrt(np.mean(err**2))),
         "bias": float(np.mean(err)),
-        "crps": float(np.mean(crps_quantile(y, *q))),
+        "crps": float(np.mean(crps_quantile(y, qs, levels))),
     }
-    if q[0] is not point:
-        out["coverage_80"] = float(np.mean((y >= q[0]) & (y <= q[2])))
+    if q is not None:
+        by = dict(zip(levels, qs, strict=True))
+        if 0.1 in by and 0.9 in by:
+            out["coverage_80"] = float(np.mean((y >= by[0.1]) & (y <= by[0.9])))
+        if 0.05 in by and 0.95 in by:
+            out["coverage_90"] = float(np.mean((y >= by[0.05]) & (y <= by[0.95])))
         out["pinball"] = {
-            f"p{round(a * 100):02d}": float(np.mean(pinball(y, qq, a)))
-            for qq, a in zip(q, ALPHAS, strict=True)
+            qname(a): float(np.mean(pinball(y, qq, a))) for qq, a in zip(qs, levels, strict=True)
         }
     return out
 
 
-def score_block(df: pd.DataFrame) -> dict[str, Any]:
+def _qs(df: pd.DataFrame, prefix: str, levels: Sequence[float]) -> list[np.ndarray]:
+    return [df[f"{prefix}{qname(a)[1:]}"].to_numpy() for a in levels]
+
+
+def score_block(df: pd.DataFrame, levels: Sequence[float]) -> dict[str, Any]:
     """Model on all its rows; all three forecasters on common rows; skill vs baselines."""
     y = df["target"].to_numpy()
     res: dict[str, Any] = {"n_model": int(len(df))}
     if len(df) == 0:
         return res
-    res["model_all_rows"] = point_scores(
-        y, df["p50"].to_numpy(), (df["p10"].to_numpy(), df["p50"].to_numpy(), df["p90"].to_numpy())
-    )
+    res["model_all_rows"] = point_scores(y, df["p50"].to_numpy(), _qs(df, "p", levels), levels)
     res["baseline_coverage"] = {
         "seasonal_naive": float(df["sn"].notna().mean()),
         "climatology": float(df["clim_mean"].notna().mean()),
@@ -256,20 +298,10 @@ def score_block(df: pd.DataFrame) -> dict[str, Any]:
         return res
     yc = common["target"].to_numpy()
     scores = {
-        "model": point_scores(
-            yc,
-            common["p50"].to_numpy(),
-            (common["p10"].to_numpy(), common["p50"].to_numpy(), common["p90"].to_numpy()),
-        ),
-        "seasonal_naive": point_scores(yc, common["sn"].to_numpy(), None),
+        "model": point_scores(yc, common["p50"].to_numpy(), _qs(common, "p", levels), levels),
+        "seasonal_naive": point_scores(yc, common["sn"].to_numpy(), None, levels),
         "climatology": point_scores(
-            yc,
-            common["clim_mean"].to_numpy(),
-            (
-                common["clim_q10"].to_numpy(),
-                common["clim_q50"].to_numpy(),
-                common["clim_q90"].to_numpy(),
-            ),
+            yc, common["clim_mean"].to_numpy(), _qs(common, "clim_q", levels), levels
         ),
     }
     res["common"] = scores
@@ -352,41 +384,35 @@ def attach_baselines(
     fold_train_end: dict[str, date],
     ev: dict[str, Any],
     thresholds: dict[str, Any],
+    levels: Sequence[float],
 ) -> pd.DataFrame:
+    """Seasonal-naive, climatology (at the model's quantile levels) and the per-reach
+    seasonal threshold (engine.thresholds, fitted on the fold's training period)."""
     parts = []
     for fold, g in pred.groupby("fold"):
         g = g.reset_index(drop=True).copy()
+        end = fold_train_end[str(fold)]
         g["sn"] = seasonal_naive(obs, g, int(ev["seasonal_naive_window_days"]))
-        clim_parts = []
-        for var, gv in g.groupby("variable"):
-            tcfg = thresholds["variables"][var]
-            absolute = tcfg.get("absolute_value")
-            pct = None if absolute is not None else float(tcfg["percentile"])
-            c = climatology(
-                obs,
-                gv,
-                fold_train_end[str(fold)],
-                int(ev["climatology_window_days"]),
-                int(ev["min_climatology_obs"]),
-                pct,
-            )
-            c.index = gv.index
-            if absolute is not None:
-                c["threshold"] = float(absolute)
-                c["clim_exceed_freq"] = np.nan
-            clim_parts.append(c)
-        c = pd.concat(clim_parts).sort_index().add_prefix("clim_")
+        c = climatology(
+            obs,
+            g,
+            end,
+            int(ev["climatology_window_days"]),
+            int(ev["min_climatology_obs"]),
+            levels,
+        ).add_prefix("clim_")
+        table = seasonal_thresholds(obs, end, thresholds)
+        t = threshold_lookup(g, table, thresholds["seasons"])
+        g["threshold"] = t["threshold"].to_numpy()
+        g["threshold_clim_freq"] = t["clim_exceed_freq"].to_numpy()
         parts.append(pd.concat([g, c], axis=1))
     return pd.concat(parts, ignore_index=True)
-
-
-def bucket_label(h: int, gs: GBMSettings) -> str:
-    return gs.bucket_of(h)
 
 
 def compute_metrics(
     scored: pd.DataFrame, gs: GBMSettings, ev: dict[str, Any], thresholds: dict[str, Any]
 ) -> dict[str, Any]:
+    levels = gs.quantiles
     op = float(thresholds["guardrails"]["min_exceedance_prob"])
     folds: dict[str, Any] = {}
     losses: list[dict[str, Any]] = []
@@ -397,14 +423,14 @@ def compute_metrics(
         for var, g in gf.groupby("variable"):
             vres: dict[str, Any] = {"by_horizon": {}, "by_bucket": {}, "by_observability": {}}
             for h, gh in g.groupby("horizon"):
-                blk = score_block(gh)
+                blk = score_block(gh, levels)
                 vres["by_horizon"][str(h)] = blk
                 losses += find_losses(blk, {"fold": fold, "variable": var, "scope": f"h{h}"})
-            for b, gb in g.groupby(g["horizon"].map(lambda h: bucket_label(int(h), gs))):
-                blk = score_block(gb)
+            for b, gb in g.groupby(g["horizon"].map(lambda h: gs.bucket_of(int(h)))):
+                blk = score_block(gb, levels)
                 vres["by_bucket"][b] = blk
                 losses += find_losses(blk, {"fold": fold, "variable": var, "scope": b})
-            vres["all_horizons"] = blk = score_block(g)
+            vres["all_horizons"] = blk = score_block(g, levels)
             losses += find_losses(blk, {"fold": fold, "variable": var, "scope": "all"})
 
             obs_flag = g["reach_observable"].astype("boolean")
@@ -420,14 +446,13 @@ def compute_metrics(
                 )
                 if label == "unassessed" and sub.empty:
                     continue
-                blk = score_block(sub)
+                blk = score_block(sub, levels)
                 blk["n_reaches"] = int(sub["reach_id"].nunique())
                 vres["by_observability"][label] = blk
                 losses += find_losses(
                     blk, {"fold": fold, "variable": var, "scope": f"reaches:{label}"}
                 )
 
-            # per reach
             reach_rows = []
             for rid, gr in g.groupby("reach_id"):
                 c = gr[gr["sn"].notna() & gr["clim_mean"].notna()]
@@ -455,11 +480,11 @@ def compute_metrics(
                 "reaches": reach_rows,
             }
 
-            # probability calibration
-            has_thr = g["clim_threshold"].notna().to_numpy()
-            prob = exceedance_probability(g["p10"], g["p50"], g["p90"], g["clim_threshold"])
+            has_thr = g["threshold"].notna().to_numpy()
+            qmat = np.column_stack(_qs(g, "p", levels))
+            prob = exceedance_probability_multi(qmat, levels, g["threshold"].to_numpy())
             m = has_thr & ~np.isnan(prob)
-            event = g["target"].to_numpy()[m] > g["clim_threshold"].to_numpy()[m]
+            event = g["target"].to_numpy()[m] > g["threshold"].to_numpy()[m]
             rel: dict[str, Any] = {
                 "threshold_derivation": thresholds["variables"][var]["derivation"],
                 "rows_without_threshold": int((~has_thr).sum()),
@@ -469,7 +494,7 @@ def compute_metrics(
                     reliability(
                         prob[m],
                         event,
-                        g["clim_clim_exceed_freq"].to_numpy()[m],
+                        g["threshold_clim_freq"].to_numpy()[m],
                         int(ev["reliability_bins"]),
                         op,
                     )
@@ -482,16 +507,78 @@ def compute_metrics(
     return {"folds": folds, "losses": losses}
 
 
+def compare_on_shared_rows(
+    x: pd.DataFrame, y: pd.DataFrame, gs: GBMSettings, labels: tuple[str, str]
+) -> dict[str, Any]:
+    """Score two scored prediction sets on the (fold, variable, reach, issue, horizon)
+    rows they share. skill = 1 - metric_x / metric_y (> 0: x better)."""
+    levels = gs.quantiles
+    qc = [qname(a) for a in levels]
+    lx, ly = labels
+    m = x[[*KEYS, "target", "sn", *qc]].merge(
+        y[[*KEYS, *qc]], on=KEYS, suffixes=(f"_{lx}", f"_{ly}"), how="inner"
+    )
+    out: dict[str, Any] = {}
+
+    def block(d: pd.DataFrame) -> dict[str, Any]:
+        t = d["target"].to_numpy()
+        res: dict[str, Any] = {"n": int(len(d))}
+        for lab in labels:
+            qs = [d[f"{c}_{lab}"].to_numpy() for c in qc]
+            res[lab] = point_scores(t, d[f"p50_{lab}"].to_numpy(), qs, levels)
+        for metric in ("crps", "mae"):
+            b = res[ly][metric]
+            res[f"skill_{lx}_vs_{ly}_{metric}"] = (1 - res[lx][metric] / b) if b > 0 else None
+        sn = d["sn"].notna().to_numpy()
+        if sn.any():
+            snm = float(np.mean(np.abs(d["sn"].to_numpy()[sn] - t[sn])))
+            res["seasonal_naive_mae_on_rows_with_one"] = snm
+            for lab in labels:
+                mm = float(np.mean(np.abs(d[f"p50_{lab}"].to_numpy()[sn] - t[sn])))
+                res[f"skill_{lab}_vs_seasonal_naive_mae"] = (1 - mm / snm) if snm > 0 else None
+        return res
+
+    for fold, gf in m.groupby("fold"):
+        out[str(fold)] = {}
+        for var, g in gf.groupby("variable"):
+            v: dict[str, Any] = {"all_horizons": block(g), "by_bucket": {}}
+            for b, gb in g.groupby(g["horizon"].map(lambda h: gs.bucket_of(int(h)))):
+                v["by_bucket"][b] = block(gb)
+            out[str(fold)][str(var)] = v
+    return out
+
+
+def reach_id_shap_share(shap: pd.DataFrame) -> dict[str, Any]:
+    """Variant A, evaluation folds: mean |SHAP(reach_id)| / sum over features of mean
+    |SHAP|, per fold x variable x quantile, plus reach_id's rank among the features."""
+    if shap.empty or "shap__reach_id" not in shap:
+        return {}
+    variant = shap["variant"] if "variant" in shap else pd.Series("A", index=shap.index)
+    a = shap[(variant == "A") & shap["fold"].isin(["val", "test"])]
+    cols = [c for c in a.columns if c.startswith("shap__")]
+    out: dict[str, Any] = {}
+    for (fold, var, q), g in a.groupby(["fold", "variable", "quantile"]):
+        mean_abs = g[cols].abs().mean()
+        total = float(mean_abs.sum())
+        ranked = mean_abs.sort_values(ascending=False)
+        out.setdefault(str(fold), {}).setdefault(str(var), {})[str(q)] = {
+            "share": float(mean_abs["shap__reach_id"] / total) if total > 0 else None,
+            "rank": int(list(ranked.index).index("shap__reach_id")) + 1,
+            "of_features": len(cols),
+            "top5": [c.removeprefix("shap__") for c in ranked.index[:5]],
+            "n": int(len(g)),
+        }
+    return out
+
+
 NOT_COMPUTED = {
-    "anomaly_precision_recall_f1": "models/anomaly.py is Day 5, and data/reference/incidents.csv "
-    "has no incidents yet.",
-    "lead_time_distribution": "needs issued alerts from engine/alerts.py (Day 4) scored "
-    "against incidents.",
-    "false_alarm_rate_after_guardrails": "engine/alerts.py guardrails not built yet; the "
-    "pre-guardrail operating point is under probability.operating_point_pre_guardrail.",
+    "anomaly_precision_recall_f1": "models/anomaly.py is not built, and "
+    "data/reference/incidents.csv has no incidents yet.",
+    "lead_time_distribution": "needs issued alerts scored against incidents.",
+    "false_alarm_rate_after_guardrails": "the guardrails exist (engine/alerts.py) but have "
+    "not been replayed over the walk-forward period; the pre-guardrail operating point is "
+    "under probability.operating_point_pre_guardrail.",
     "transfer_coimbra_to_pune": "no Pune frame yet (Day 8).",
-    "live_forecast_skill": "all skill here uses archive weather for t+h drivers (perfect "
-    "prognosis). Skill with real Open-Meteo forecasts will be lower.",
 }
 
 
@@ -522,24 +609,15 @@ def _f(x: Any, w: int = 8, p: int = 3) -> str:
     )
 
 
-def format_report(metrics: dict[str, Any]) -> str:
-    rule = "=" * 118
-    L = [
-        rule,
-        "KINGFISHER - BASELINE GBM vs SEASONAL-NAIVE vs CLIMATOLOGY (walk-forward, common rows)",
-        rule,
-        "  skill = 1 - model/baseline; negative = the model is WORSE. "
-        "CRPS is the 3-quantile approximation.",
-        "  Future drivers are archive weather (perfect prognosis) - live skill will be lower.",
-    ]
-    for fold, fres in metrics["folds"].items():
+def _run_table(L: list[str], folds: dict[str, Any], names: dict[str, str], *, full: bool) -> None:
+    for fold, fres in folds.items():
         for var, vres in fres.items():
-            L.append(f"\n  FOLD {fold.upper()}  |  {var}")
+            L.append(f"\n  FOLD {fold.upper()}  |  {names.get(var, var)}")
             L.append(
                 f"  {'scope':<22}{'n':>7}  {'MAE m/sn/cl':>27}  {'CRPS m/sn/cl':>27}  "
                 f"{'cov80':>6}  verdict"
             )
-            rows = [(f"h{h}", b) for h, b in vres["by_horizon"].items()]
+            rows = [(f"h{h}", b) for h, b in vres["by_horizon"].items()] if full else []
             rows += list(vres["by_bucket"].items()) + [("ALL", vres["all_horizons"])]
             rows += [(f"reaches:{k}", b) for k, b in vres["by_observability"].items()]
             for scope, b in rows:
@@ -562,6 +640,8 @@ def format_report(metrics: dict[str, Any]) -> str:
                     + "  ".join(" ".join(_f(c[f][m]) for f in FORECASTERS) for m in ("mae", "crps"))
                     + f"  {_f(c['model'].get('coverage_80'), 6, 2)}  {verdict}"
                 )
+            if not full:
+                continue
             pr = vres["per_reach"]
             L.append(
                 f"  per reach (>= {pr['min_rows']} rows): {pr['reaches_scored']} scored | "
@@ -585,18 +665,78 @@ def format_report(metrics: dict[str, Any]) -> str:
                     "  exceedance: no rows with a threshold "
                     f"({p['rows_without_threshold']} without)"
                 )
+
+
+def _comparison_table(
+    L: list[str], title: str, comp: dict[str, Any], labels: tuple[str, str], names: dict[str, str]
+) -> None:
+    lx, ly = labels
+    L.append(f"\n  {title}  (shared rows; skill = 1 - {lx}/{ly}, negative = {lx} WORSE)")
+    L.append(
+        f"  {'fold':<5} {'variable':<26} {'scope':<8} {'n':>7} "
+        f"{'CRPS ' + lx:>14} {'CRPS ' + ly:>14} {'skill':>7} {'MAE skill':>9}"
+    )
+    for fold, fv in comp.items():
+        for var, v in fv.items():
+            for scope, b in [("ALL", v["all_horizons"]), *v["by_bucket"].items()]:
+                L.append(
+                    f"  {fold:<5} {names.get(var, var)[:26]:<26} {scope:<8} {b['n']:>7} "
+                    f"{_f(b[lx]['crps'], 14, 4)} {_f(b[ly]['crps'], 14, 4)} "
+                    f"{_f(b[f'skill_{lx}_vs_{ly}_crps'], 7, 3)} "
+                    f"{_f(b[f'skill_{lx}_vs_{ly}_mae'], 9, 3)}"
+                )
+
+
+def format_report(metrics: dict[str, Any]) -> str:
+    rule = "=" * 118
+    names = {k: v["display_name"] for k, v in metrics.get("variables", {}).items()}
+    L = [
+        rule,
+        "KINGFISHER - BASELINE GBM vs SEASONAL-NAIVE vs CLIMATOLOGY (walk-forward, common rows)",
+        rule,
+        "  skill = 1 - model/baseline; negative = the model is WORSE. CRPS is the "
+        "quantile-quadrature approximation.",
+        f"  HEADLINE = {HEADLINE}: variant A, archive (perfect-prognosis) weather.",
+    ]
+    _run_table(L, metrics["folds"], names, full=True)
+    for run, r in metrics.get("runs", {}).items():
+        if run == HEADLINE:
+            continue
+        L.append(f"\n{'-' * 118}\n  RUN {run}")
+        _run_table(L, r["folds"], names, full=False)
+    for weather, comp in metrics.get("variant_comparison", {}).items():
+        _comparison_table(L, f"VARIANT A vs B - {weather} weather", comp, ("A", "B"), names)
+    for variant, comp in metrics.get("weather_comparison", {}).items():
+        _comparison_table(
+            L,
+            f"ORACLE vs AS-ISSUED weather - variant {variant}",
+            comp,
+            ("ORACLE", "ASISSUED"),
+            names,
+        )
+    share = metrics.get("reach_id_shap_share", {})
+    if share:
+        L.append("\n  REACH_ID SHAP SHARE (variant A): mean|SHAP(reach_id)| / sum mean|SHAP|")
+        for fold, fv in share.items():
+            for var, qv in fv.items():
+                for q, s in qv.items():
+                    L.append(
+                        f"  {fold:<5} {names.get(var, var)[:26]:<26} {q:<4} share "
+                        f"{_f(s['share'], 6, 3)} | rank {s['rank']}/{s['of_features']} | "
+                        f"top: {', '.join(s['top5'])}"
+                    )
     L.append("\n" + rule)
     losses = metrics["losses"]
     if losses:
-        L.append(f"  THE MODEL LOSES TO A BASELINE IN {len(losses)} COMPARISONS:")
+        L.append(f"  THE MODEL LOSES TO A BASELINE IN {len(losses)} COMPARISONS (all runs):")
         for x in losses:
             L.append(
-                f"    [{x['fold']}] {x['variable']:<16} {x['scope']:<22} {x['metric']:<5} "
-                f"model {x['model']:.4f} vs {x['baseline']} {x['baseline_value']:.4f} "
-                f"(skill {x['skill']:+.3f}, n={x['n']})"
+                f"    [{x.get('run', HEADLINE)} {x['fold']}] {x['variable']:<16} "
+                f"{x['scope']:<22} {x['metric']:<5} model {x['model']:.4f} vs {x['baseline']} "
+                f"{x['baseline_value']:.4f} (skill {x['skill']:+.3f}, n={x['n']})"
             )
     else:
-        L.append("  The model beats both baselines on every scored comparison.")
+        L.append("  Every model run beats both baselines on every scored comparison.")
     L.append("  Not computed: " + "; ".join(metrics["not_computed"]))
     L.append(rule)
     return "\n".join(L)
@@ -650,6 +790,7 @@ def write_figures(metrics: dict[str, Any], out: Path) -> list[str]:
 
     out.mkdir(parents=True, exist_ok=True)
     written = []
+    names = {k: v["display_name"] for k, v in metrics.get("variables", {}).items()}
 
     def save(fig: Any, name: str) -> None:
         fig.patch.set_facecolor(SURFACE)
@@ -672,7 +813,7 @@ def write_figures(metrics: dict[str, Any], out: Path) -> list[str]:
                         )
                     ax.set_xlabel("horizon (days)", color=INK2, fontsize=9)
                     ax.set_title(
-                        metric.upper() + (" (3-quantile approx.)" if metric == "crps" else ""),
+                        metric.upper() + (" (quantile approx.)" if metric == "crps" else ""),
                         color=INK,
                         fontsize=10,
                         loc="left",
@@ -691,7 +832,7 @@ def write_figures(metrics: dict[str, Any], out: Path) -> list[str]:
                     bbox_to_anchor=(1.0, 1.02),
                 )
                 fig.suptitle(
-                    f"{var} - error by horizon, {fold} fold (lower is better)",
+                    f"{names.get(var, var)} - error by horizon, {fold} fold (lower is better)",
                     color=INK,
                     fontsize=11,
                     x=0.01,
@@ -729,7 +870,7 @@ def write_figures(metrics: dict[str, Any], out: Path) -> list[str]:
                 ax.set_ylabel("share of observations inside interval", color=INK2, fontsize=9)
                 ax.legend(frameon=False, fontsize=8, labelcolor=INK2, loc="lower right")
                 ax.set_title(
-                    f"{var} - 80% interval coverage, {fold} fold",
+                    f"{names.get(var, var)} - 80% interval coverage, {fold} fold",
                     color=INK,
                     fontsize=10,
                     loc="left",
@@ -789,7 +930,8 @@ def write_figures(metrics: dict[str, Any], out: Path) -> list[str]:
                     ncol=1,
                 )
                 ax.set_title(
-                    f"{var} - reliability, {fold} fold\nP(obs > seasonal threshold), n={p['n']}, "
+                    f"{names.get(var, var)} - reliability, {fold} fold\n"
+                    f"P(obs > per-reach seasonal threshold), n={p['n']}, "
                     f"Brier {p['brier']:.3f} (clim {p['brier_climatology']:.3f})",
                     color=INK,
                     fontsize=10,
@@ -845,7 +987,7 @@ def write_figures(metrics: dict[str, Any], out: Path) -> list[str]:
             ax.set_ylabel("MAE (common rows)", color=INK2, fontsize=9)
             ax.legend(frameon=False, fontsize=8, labelcolor=INK2)
             ax.set_title(
-                f"{var} - skill by reach observability, {fold} fold",
+                f"{names.get(var, var)} - skill by reach observability, {fold} fold",
                 color=INK,
                 fontsize=10,
                 loc="left",
@@ -858,9 +1000,85 @@ def write_figures(metrics: dict[str, Any], out: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# forecasts table
+# ---------------------------------------------------------------------------
+FORECAST_COLUMNS = [
+    "reach_id",
+    "issued_date",
+    "target_date",
+    "variable",
+    "p05",
+    "p10",
+    "p25",
+    "p50",
+    "p75",
+    "p90",
+    "p95",
+    "model_version",
+    "variant",
+    "weather",
+    "fit",
+    "horizon",
+]
+
+
+def forecast_records(pred: pd.DataFrame) -> pd.DataFrame:
+    """Walk-forward predictions -> rows for the `forecasts` table. Quantile columns the
+    model did not produce are NULL; the rearranged quantiles are already ordered."""
+    out = pd.DataFrame(
+        {
+            "reach_id": pred["reach_id"].astype(str),
+            "issued_date": pd.to_datetime(pred["issued_date"]).dt.date,
+            "target_date": pd.to_datetime(pred["target_date"]).dt.date,
+            "variable": pred["variable"],
+            "model_version": pred["model_version"],
+            "variant": pred.get("variant", "A"),
+            "weather": pred.get("weather", "ORACLE"),
+            "fit": "wf-" + pred["fold"].astype(str),
+            "horizon": pred["horizon"].astype(int),
+        }
+    )
+    for q in ("p05", "p10", "p25", "p50", "p75", "p90", "p95"):
+        out[q] = pred[q].to_numpy() if q in pred else np.nan
+    if out.duplicated(
+        ["reach_id", "issued_date", "target_date", "variable", "model_version", "weather"]
+    ).any():
+        raise ValueError("duplicate forecast keys - one model scored the same row twice")
+    return out[FORECAST_COLUMNS]
+
+
+def persist_forecasts(pred: pd.DataFrame) -> int:
+    """Replace every row of these model versions, then bulk-insert."""
+    from sqlalchemy import text
+
+    from core.db import bulk_upsert, session_scope
+
+    rows = forecast_records(pred)
+    versions = sorted(rows["model_version"].unique())
+    with session_scope() as session:
+        session.execute(
+            text("DELETE FROM forecasts WHERE model_version = ANY(:v)"), {"v": versions}
+        )
+    written = bulk_upsert(
+        rows,
+        "forecasts",
+        ["reach_id", "issued_date", "target_date", "variable", "model_version", "weather"],
+    )
+    log.info("evaluate.forecasts_written", rows=written, versions=len(versions))
+    return written
+
+
+# ---------------------------------------------------------------------------
 # I/O
 # ---------------------------------------------------------------------------
-def evaluate(city: str, *, results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
+def _fold_of(fit_name: str) -> str | None:
+    last = fit_name.split(".")[-1]
+    return last.removeprefix("wf-") if last.startswith("wf-") else None
+
+
+def evaluate(
+    city: str, *, results_dir: Path = RESULTS_DIR, write_db: bool = True
+) -> dict[str, Any]:
     fs, gs = FrameSettings.from_config(), GBMSettings.from_config()
     cfg = load_config("modelling")
     ev, thresholds = cfg["evaluation"], load_config("thresholds")
@@ -878,8 +1096,20 @@ def evaluate(city: str, *, results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
 
     with stage(log, "evaluate", city=city) as counters:
         pred = pd.read_parquet(pred_path)
-        folds_expected = [n.removeprefix("wf-") for n in run["fits"] if n.startswith("wf-")]
-        empty = [f for f in folds_expected if pred.empty or not (pred["fold"] == f).any()]
+        if not pred.empty:
+            if "variant" not in pred:
+                pred["variant"] = "A"
+            if "weather" not in pred:
+                pred["weather"] = "ORACLE"
+        folds_expected = sorted(
+            {f for n in run["fits"] if (f := _fold_of(n))}, key=lambda f: (f != "val", f)
+        )
+        headline = (
+            pred[(pred["variant"] == "A") & (pred["weather"] == "ORACLE")]
+            if not pred.empty
+            else pred
+        )
+        empty = [f for f in folds_expected if headline.empty or not (headline["fold"] == f).any()]
         if empty:
             raise NoEvaluationData(
                 f"walk-forward fold(s) {empty} have no OK Sentinel-2 targets to score. "
@@ -888,37 +1118,90 @@ def evaluate(city: str, *, results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
             )
         frame = load_frame(city)
         obs = observations_from_frame(frame, fs.variables)
-        train_end = {
-            f: date.fromisoformat(run["fits"][f"wf-{f}"]["train_end"]) for f in folds_expected
+        train_end: dict[str, date] = {}
+        for n, fit in run["fits"].items():
+            if (f := _fold_of(n)) is not None:
+                train_end[f] = date.fromisoformat(fit["train_end"])
+
+        runs: dict[str, Any] = {}
+        scored_by_run: dict[str, pd.DataFrame] = {}
+        all_losses: list[dict[str, Any]] = []
+        for (variant, weather), sub in pred.groupby(["variant", "weather"]):
+            name = f"{variant}/{weather}"
+            scored = attach_baselines(sub, obs, train_end, ev, thresholds, gs.quantiles)
+            m = compute_metrics(scored, gs, ev, thresholds)
+            runs[name] = {"folds": m["folds"], "n_forecasts": int(len(sub))}
+            all_losses += [{"run": name, **x} for x in m["losses"]]
+            scored_by_run[name] = scored
+
+        variant_comparison = {
+            w: compare_on_shared_rows(
+                scored_by_run[f"A/{w}"], scored_by_run[f"B/{w}"], gs, ("A", "B")
+            )
+            for w in ("ORACLE", "ASISSUED")
+            if f"A/{w}" in scored_by_run and f"B/{w}" in scored_by_run
         }
-        scored = attach_baselines(pred, obs, train_end, ev, thresholds)
-        metrics = compute_metrics(scored, gs, ev, thresholds)
+        weather_comparison = {
+            v: compare_on_shared_rows(
+                scored_by_run[f"{v}/ORACLE"],
+                scored_by_run[f"{v}/ASISSUED"],
+                gs,
+                ("ORACLE", "ASISSUED"),
+            )
+            for v in ("A", "B")
+            if f"{v}/ORACLE" in scored_by_run and f"{v}/ASISSUED" in scored_by_run
+        }
+        shap_path = PROCESSED_DIR / f"gbm_shap_{city}.parquet"
+        shap_share = reach_id_shap_share(pd.read_parquet(shap_path)) if shap_path.exists() else {}
+
+        not_computed = dict(NOT_COMPUTED)
+        if not weather_comparison:
+            not_computed["asissued_weather"] = (
+                "pipeline.asissued_weather has not been built - only archive (perfect-"
+                "prognosis) weather was scored; live skill will be lower."
+            )
         metrics = {
             "city": city,
             "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "model_versions": {k: v["version"] for k, v in run["fits"].items()},
             "frame_sha256": run["frame_sha256"],
             "splits": {f: {"train_end": str(train_end[f])} for f in folds_expected},
+            "variables": {
+                v: {"display_name": c["display_name"], "units": c["units"]}
+                for v, c in thresholds["variables"].items()
+            },
+            "variants": run.get("variants", {}),
+            "dropped_features": run.get("dropped_features", {}),
+            "quantile_levels": list(gs.quantiles),
             "config": {
                 "evaluation": ev,
                 "thresholds": thresholds["variables"],
+                "seasons": thresholds["seasons"],
                 "min_exceedance_prob": thresholds["guardrails"]["min_exceedance_prob"],
             },
             "quantiles_crossed_rearranged": {
-                k: v.get("quantiles_crossed") for k, v in run["fits"].items() if k.startswith("wf-")
+                k: v.get("quantiles_crossed") for k, v in run["fits"].items() if _fold_of(k)
             },
-            "not_computed": NOT_COMPUTED,
-            **metrics,
+            "headline_run": HEADLINE,
+            "folds": runs[HEADLINE]["folds"],
+            "losses": all_losses,
+            "runs": runs,
+            "variant_comparison": variant_comparison,
+            "weather_comparison": weather_comparison,
+            "reach_id_shap_share": shap_share,
+            "not_computed": not_computed,
         }
         metrics = dict(_clean(metrics))
         results_dir.mkdir(parents=True, exist_ok=True)
         (results_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
         figures = write_figures(metrics, results_dir / "figures")
+        written = persist_forecasts(pred) if write_db else 0
         counters.record(
             rows_in=len(pred),
-            rows_out=len(scored),
-            losses=len(metrics["losses"]),
+            rows_out=sum(len(s) for s in scored_by_run.values()),
+            losses=len(all_losses),
             figures=len(figures),
+            forecasts_written=written,
         )
     print(format_report(metrics))
     return metrics
@@ -927,8 +1210,9 @@ def evaluate(city: str, *, results_dir: Path = RESULTS_DIR) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Walk-forward evaluation vs baselines")
     parser.add_argument("--city", default="coimbra")
+    parser.add_argument("--no-db", action="store_true", help="do not write the forecasts table")
     args = parser.parse_args(argv)
-    evaluate(args.city)
+    evaluate(args.city, write_db=not args.no_db)
     return 0
 
 

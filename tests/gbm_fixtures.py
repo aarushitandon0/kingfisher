@@ -47,8 +47,15 @@ EVAL_CFG = {
     "reliability_bins": 10,
 }
 THRESHOLDS = {
+    "seasons": {"DJF": [12, 1, 2], "MAM": [3, 4, 5], "JJA": [6, 7, 8], "SON": [9, 10, 11]},
     "variables": {
-        v: {"derivation": "seasonal_percentile", "percentile": 0.9, "absolute_value": None}
+        v: {
+            "display_name": v,
+            "units": "dimensionless index",
+            "derivation": "per_reach_seasonal_percentile",
+            "percentile": 0.9,
+            "min_obs": 8,
+        }
         for v in FS.variables
     },
     "guardrails": {"min_exceedance_prob": 0.6},

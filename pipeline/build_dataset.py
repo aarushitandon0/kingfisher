@@ -425,6 +425,27 @@ def load_inputs(city: str) -> dict[str, pd.DataFrame]:
     return {"reaches": reaches, "drivers": drivers, "observations": observations, "static": static}
 
 
+def static_flag_summary(static: pd.DataFrame) -> dict[str, dict[str, int]]:
+    """{feature: {flag: n_reaches}} from catchment_attributes.flags (JSONB). The model
+    reads this to decide which static features are land-cover PROXIES right now."""
+    out: dict[str, dict[str, int]] = {}
+    if "flags" not in static:
+        return out
+    for flags in static["flags"]:
+        if isinstance(flags, str):
+            flags = json.loads(flags)
+        for feature, flag in (flags or {}).items():
+            if feature.startswith("_") or not isinstance(flag, str):
+                continue
+            out.setdefault(feature, {})
+            out[feature][flag] = out[feature].get(flag, 0) + 1
+    return out
+
+
+def frame_meta_path(city: str) -> Any:
+    return PROCESSED_DIR / f"frame_{city}.meta.json"
+
+
 def build_dataset(city: str, *, write: bool = True) -> dict[str, Any]:
     fs = FrameSettings.from_config()
     inputs = load_inputs(city)
@@ -458,6 +479,13 @@ def build_dataset(city: str, *, write: bool = True) -> dict[str, Any]:
             PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
             path = PROCESSED_DIR / f"frame_{city}.parquet"
             frame.to_parquet(path, index=False)
+            frame_meta_path(city).write_text(
+                json.dumps(
+                    {"static_flags": static_flag_summary(inputs["static"]), "rows": len(frame)},
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
             log.info(
                 "build_dataset.written", path=str(path), rows=len(frame), columns=frame.shape[1]
             )

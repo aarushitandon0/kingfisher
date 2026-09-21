@@ -70,13 +70,16 @@ def test_crossed_quantiles_raise() -> None:
 def test_crps_of_point_forecast_is_absolute_error() -> None:
     y = np.array([1.0, 5.0, -2.0])
     x = np.array([2.0, 3.0, -2.5])
-    np.testing.assert_allclose(crps_quantile(y, x, x, x), np.abs(y - x))
+    np.testing.assert_allclose(crps_quantile(y, [x, x, x], (0.1, 0.5, 0.9)), np.abs(y - x))
+    seven = (0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95)
+    np.testing.assert_allclose(crps_quantile(y, [x] * 7, seven), np.abs(y - x))
 
 
 def test_crps_rewards_a_sharp_correct_interval() -> None:
     y = np.array([2.0])
-    wide = crps_quantile(y, np.array([0.0]), np.array([2.0]), np.array([4.0]))
-    narrow = crps_quantile(y, np.array([1.8]), np.array([2.0]), np.array([2.2]))
+    lv = (0.1, 0.5, 0.9)
+    wide = crps_quantile(y, [np.array([0.0]), np.array([2.0]), np.array([4.0])], lv)
+    narrow = crps_quantile(y, [np.array([1.8]), np.array([2.0]), np.array([2.2])], lv)
     assert narrow < wide
 
 
@@ -159,21 +162,21 @@ def test_climatology_uses_training_fold_only() -> None:
             ("2024-06-01", "", 1000.0),
         ]
     )
-    c = climatology(obs, _targets([("2024-06-05", "2024-06-10")]), date(2023, 12, 31), 15, 3, 0.9)
+    c = climatology(obs, _targets([("2024-06-05", "2024-06-10")]), date(2023, 12, 31), 15, 3)
     assert c.loc[0, "mean"] == pytest.approx(2.0)
     assert c.loc[0, "n"] == 3
 
 
 def test_climatology_below_min_obs_is_nan_and_counted() -> None:
     obs = _obs([("2022-06-12", "", 2.0), ("2023-06-09", "", 3.0)])
-    c = climatology(obs, _targets([("2024-06-05", "2024-06-10")]), date(2023, 12, 31), 15, 3, 0.9)
+    c = climatology(obs, _targets([("2024-06-05", "2024-06-10")]), date(2023, 12, 31), 15, 3)
     assert c.loc[0, "n"] == 2
-    assert c.loc[0, ["mean", "q10", "q50", "q90", "threshold"]].isna().all()
+    assert c.loc[0, ["mean", "q10", "q50", "q90"]].isna().all()
 
 
 def test_climatology_window_wraps_the_year() -> None:
     obs = _obs([("2021-12-28", "", 1.0), ("2022-01-03", "", 2.0), ("2023-12-30", "", 3.0)])
-    c = climatology(obs, _targets([("2024-01-01", "2024-01-02")]), date(2023, 12, 31), 15, 3, None)
+    c = climatology(obs, _targets([("2024-01-01", "2024-01-02")]), date(2023, 12, 31), 15, 3)
     assert c.loc[0, "n"] == 3
 
 
@@ -200,8 +203,8 @@ def _scored(model_error: float, n: int = 50, observable: bool = True) -> pd.Data
             "clim_q10": y - 0.3,
             "clim_q50": y + 0.7,
             "clim_q90": y + 1.7,
-            "clim_threshold": np.nan,
-            "clim_clim_exceed_freq": np.nan,
+            "threshold": np.nan,
+            "threshold_clim_freq": np.nan,
         }
     )
 
@@ -225,7 +228,7 @@ def test_a_winning_model_is_reported_as_winning() -> None:
 
 
 def test_skill_sign_convention() -> None:
-    blk = score_block(_scored(model_error=3.0))
+    blk = score_block(_scored(model_error=3.0), fx.GS.quantiles)
     assert blk["skill"]["seasonal_naive"]["mae"] < 0
     assert find_losses(blk, {"x": 1})
 
@@ -233,7 +236,7 @@ def test_skill_sign_convention() -> None:
 def test_baseline_gaps_are_disclosed_not_hidden() -> None:
     s = _scored(model_error=0.05)
     s.loc[s.index[:20], "sn"] = np.nan
-    blk = score_block(s)
+    blk = score_block(s, fx.GS.quantiles)
     assert blk["n_model"] == 50 and blk["n_common"] == 30
     assert blk["baseline_coverage"]["seasonal_naive"] == pytest.approx(0.6)
 
@@ -268,7 +271,9 @@ def test_end_to_end_metrics_and_figures(tmp_path) -> None:
         preds.append(p)
         train_end[fold["name"]] = fold["train_end"]
     obs = observations_from_frame(frame, FS.variables)
-    scored = attach_baselines(pd.concat(preds), obs, train_end, fx.EVAL_CFG, fx.THRESHOLDS)
+    scored = attach_baselines(
+        pd.concat(preds), obs, train_end, fx.EVAL_CFG, fx.THRESHOLDS, fx.GS.quantiles
+    )
     m = ev._clean(compute_metrics(scored, fx.GS, fx.EVAL_CFG, fx.THRESHOLDS))
     json.dumps(m)  # serialisable, no NaN
     assert list(m["folds"]) == ["val", "test"]

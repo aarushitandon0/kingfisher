@@ -110,11 +110,11 @@ it is the difference between a credible system and an overclaiming demo.
 ┌────────────────────────────────────▼────────────────────────┐
 │ L3  MODEL                                                   │
 │     Baseline: gradient boosting, quantile loss              │
-│     Upgrade: SAGE-TS hybrid — wavelet burstiness routes     │
-│       smooth regimes → Mamba, bursty regimes → Transformer  │
-│     Pooled across reaches + learned reach embedding         │
-│     Output: 10-day forecast, P10/P50/P90                    │
-│     Burstiness score doubles as anomaly detector            │
+│     Upgrade: EA-LSTM + CMAL head (NeuralHydrology)          │
+│       static attributes gate the LSTM; masked loss on NaN   │
+│     Pooled across reaches, residual assimilation on top     │
+│     Output: 10-day forecast, P10/P50/P90 + CDF              │
+│     Anomaly = what the weather cannot explain               │
 └────────────────────────────────────┬────────────────────────┘
                                      │
         ┌────────────────────────────┼────────────────────────┐
@@ -260,40 +260,46 @@ categorical.
 feeds the alert engine's driver attribution directly), and guarantees you have a working
 system before the ambitious part. If the hybrid fails on Day 6, you still ship.
 
-### 7.2 Upgrade — SAGE-TS hybrid
+### 7.2 Upgrade — EA-LSTM with CMAL head
 
-Adapt the existing SAGE-TS architecture rather than reinventing it:
+Entity-Aware LSTM (Kratzert et al. 2019, HESS), trained through NeuralHydrology:
 
-- Wavelet decomposition of the reach state series produces a **burstiness score** per
-  timestep.
-- Smooth regimes route to the **Mamba** expert — seasonal cycles, slow eutrophication
-  buildup, baseflow condition.
-- Bursty regimes route to the **Transformer** expert — storm response, discharge events,
-  sharp transitions.
-- Driver features enter both experts as exogenous inputs.
+- Static catchment attributes (imperviousness, riparian condition, ALAN, roads) drive the
+  **input gate**, so they control how each reach responds to weather. A reach with no
+  observations is still simulated from its attributes.
+- Dense daily weather drivers are the dynamic inputs. Sparse Sentinel-2 targets enter
+  through a **masked loss**: NaN targets are skipped, never filled.
+- **CMAL head** (Klotz et al. 2022) outputs a full predictive distribution, so
+  P10/P50/P90 and `P(state > threshold)` come straight from the CDF, with no quantile
+  interpolation.
+- **Residual assimilation:** where a usable observation exists, the recent residual
+  (observed − simulated) is propagated forward with decay. Assimilated where observable,
+  simulated where not. Works on LightGBM as well.
+- **Conformal calibration** of the intervals on a held-out fold. Also works on both
+  models.
+- Perturbing a static attribute changes behaviour smoothly, which is what the scenario
+  engine needs. LightGBM's trees are step functions and cannot extrapolate.
 
-**The structural gift:** in SAGE-TS the burstiness signal already doubles as an anomaly
-detector. Here, that means **the early-warning alert falls out of the routing decision**.
-You are not bolting a detector onto a forecaster — the detector is load-bearing.
-
-**Data thinness — critical.** ~10 years × ~50 usable acquisitions ≈ 500 timesteps per
-reach. That is thin for a Transformer. Therefore:
-- Train **one pooled model across all reaches** with a learned reach embedding, not one
-  model per reach. This multiplies effective sample size by the reach count and is
-  standard practice in hydrological ML.
+**Data thinness — critical.** Published EA-LSTM work uses hundreds of catchments; we have
+~30 with targets. Therefore:
+- Train **one pooled model across all reaches**, not one per reach.
 - Keep model capacity small. Regularise hard.
-- If the hybrid does not beat LightGBM on held-out years, **ship LightGBM and report the
-  comparison**. A documented negative result on a novel architecture is more credible
-  than an undocumented win.
+- If EA-LSTM does not beat LightGBM on held-out years, **ship LightGBM and report the
+  comparison**. A documented negative result is more credible than an undocumented win.
 
-### 7.3 Anomaly detection
+### 7.3 Anomaly detection — what the weather cannot explain
 
-Two signals, reported separately:
-- **Burstiness spike** — routing-derived, from the hybrid
-- **Forecast residual** — observed falls outside P10–P90 by a margin
+An anomaly is an observation the weather cannot explain. Rain-driven turbidity is normal;
+the same spike on a dry day is a candidate discharge signal.
 
-An anomaly requires either. Scored against `data/reference/incidents.csv` (§1.6 of
-DATA_SOURCES.md).
+- The model simulates the state from weather and static attributes alone (no
+  assimilation of the observation being tested).
+- **Weather-explained residual:** observed falls outside the simulated P10–P90 by a
+  margin, in a period where the drivers do not account for it.
+- Reported per reach-date with the driver context (e.g. antecedent dry days, precipitation)
+  that makes it unexplained.
+
+Scored against `data/reference/incidents.csv` (§1.6 of DATA_SOURCES.md).
 
 ---
 
@@ -326,8 +332,8 @@ stance as `refused` being a first-class outcome in the Razorpay engine and
 
 ### Attribution
 
-Every alert carries driver contributions from SHAP (baseline) or attention/routing
-weights (hybrid):
+Every alert carries driver contributions from SHAP (LightGBM) or integrated gradients
+(EA-LSTM):
 
 > **ALERT — Reach R-041, Ribeira de Coselhas**
 > Turbidity exceedance probability 0.78 for 23–25 Sep
@@ -398,6 +404,42 @@ Cost estimate: €X
 
 **Always widen intervals on scenario runs, and always show the caveat.** Do not hide it
 in a tooltip.
+
+### 9.6 Binding rule — which model, and when the model is not trusted (Day 6)
+
+This rule is binding on `engine/scenarios.py` and on the Pune transfer. It exists because
+a pooled model with `reach_id` can absorb every between-reach difference into the reach's
+own offset, and then perturbing a static attribute does nothing — or something with the
+wrong sign — and the scenario output would be a number about nothing.
+
+1. **Scenarios and the Pune transfer always use variant B.** Variant B has no reach
+   identity (`reach_id` and the reach's own observation history are excluded; see
+   `config/modelling.yaml` → `baseline_gbm.variants`), so between-reach differences can
+   only be carried by the static attributes the scenarios perturb. Variant A is the
+   forecasting model; it is never used to answer "what if".
+
+2. **Response check before any intervention perturbs a static feature.** For that
+   feature, on held-out data (the walk-forward test fold), perturb it by −1 SD and +1 SD
+   (SD over reaches, training fold) with everything else fixed, re-infer with variant B,
+   and record the **sign** and **magnitude** of the mean change in the target (and in
+   P(exceedance)). Persist the check with the model version it was run on.
+
+   - If the sign **contradicts the literature** (the sign in the coefficient table's
+     `effect`), or the magnitude is **negligible** (below the threshold fixed in config
+     before the check is run), the model is not trusted for this lever. The
+     **literature effect is applied directly to the forecast distribution** instead
+     (shift/scale the quantiles by the cited coefficient and its uncertainty range),
+     not through the model.
+   - Otherwise the perturbation goes through the model (§9.2).
+
+3. **Every scenario result records which path it took** — `MODEL_PERTURBATION` or
+   `LITERATURE_DIRECT` — per lever, together with the response-check sign and magnitude
+   that decided it. The path is shown next to the result in the UI, not in a tooltip.
+
+4. **Out of support.** Any perturbed value outside the range of that feature in the
+   training data is flagged `OUT_OF_SUPPORT`. Trees cannot extrapolate: beyond the
+   training range the model returns its edge value, so a flagged result states that the
+   response is truncated there. The flag travels with the result and is displayed.
 
 ---
 
@@ -586,7 +628,7 @@ kingfisher/
 | Criterion | Where Kingfisher earns it |
 |-----------|---------------------------|
 | **Impact & Alignment** | Track 6 *is* the consortium's stated mission — an AI-based Environmental Surveillance System built on early warning indicators. Exposure pathways make the One Health link explicit without overclaiming. |
-| **Innovation** | Wavelet-routed hybrid forecaster where the routing signal *is* the anomaly detector. Upstream catchment delineation. ALAN at reach scale. Cited-coefficient scenario engine. |
+| **Innovation** | Anomaly = what weather can't explain; assimilated where observable, simulated where not. Upstream catchment delineation. ALAN at reach scale. Cited-coefficient scenario engine. |
 | **Architecture** | Driver→state design forced by a real constraint. Walk-forward validation with baselines. Guardrails with `INSUFFICIENT_EVIDENCE`. Live metrics endpoint. |
 | **UX** | Two dedicated days. Scenario workbench is the memorable interaction. |
 | **Scale** | Pune transfer on a different continent with a config change. Global data sources throughout. FHIR interoperability. |

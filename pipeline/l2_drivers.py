@@ -420,9 +420,13 @@ def fetch_cell_series(
     variables: list[str],
     *,
     forecast_days: int | None,
+    forecast_model: str | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any], Counter[str]]:
     """Archive (year chunks, cached) + optional forecast bridge -> hourly frame with a
-    `source` column. Returns (hourly, served grid point, cache counters)."""
+    `source` column. Returns (hourly, served grid point, cache counters).
+
+    The forecast bridge is pinned to `forecast_model` (config weather.forecast_model),
+    the model whose archived runs measure as-issued skill."""
     counts: Counter[str] = Counter()
     parts: list[pd.DataFrame] = []
     served: dict[str, Any] = {}
@@ -446,7 +450,13 @@ def fetch_cell_series(
         today = datetime.now(UTC).date()
         past_days = min(92, max(0, (today - last_archive).days))
         payload, hit = openmeteo.fetch_forecast(
-            lat, lon, days=forecast_days, variables=variables, issued=today, past_days=past_days
+            lat,
+            lon,
+            days=forecast_days,
+            variables=variables,
+            issued=today,
+            past_days=past_days,
+            model=forecast_model,
         )
         counts["forecast_hit" if hit else "forecast_fetch"] += 1
         forecast = hourly_frame(payload).assign(source="FORECAST")
@@ -474,6 +484,12 @@ def build_drivers(
         if required not in variables:
             raise ValueError(f"config weather.variables must include {required}")
     metric_crs = city_cfg["crs"]["metric"]
+    forecast_model = weather.get("forecast_model")
+    if forecast and not forecast_model:
+        raise ValueError(
+            f"config weather.forecast_model is unset for {city}: the live forecast must be "
+            "pinned to the model whose as-issued skill is reported"
+        )
 
     ctx = load_reach_context(city)
     with stage(log, "l2_drivers", city=city) as counters:
@@ -514,6 +530,7 @@ def build_drivers(
                 end,
                 variables,
                 forecast_days=int(weather.get("forecast_days", 10)) if forecast else None,
+                forecast_model=forecast_model,
             )
             cache_counts.update(counts)
             hourly_rows += len(hourly)

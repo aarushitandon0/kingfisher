@@ -68,7 +68,7 @@ from shapely.geometry import LineString, shape
 from shapely.ops import transform as shapely_transform
 
 from core.cache import DiskCache, cache_key
-from core.config import as_date, load_config
+from core.config import load_config
 from core.logging import get_logger, stage
 from core.settings import DATA_DIR, get_settings
 from pipeline.l0_network import load_city_config
@@ -261,6 +261,16 @@ function evaluatePixel(s) {{
 
 def evalscript_hash(script: str) -> str:
     return hashlib.sha256(script.encode("utf-8")).hexdigest()
+
+
+def nechad_pixel(rho: float, s: S2Settings) -> float | None:
+    """Python mirror of the evalscript's per-pixel turbidity index (tests pin the two
+    together): T = A*rho / (1 - rho/C), valid only for 0 <= rho < max_rho_fraction_of_C*C.
+    As rho -> C the denominator -> 0 and T diverges, so those pixels are excluded
+    (None) rather than averaged in; a date where too few survive is OUT_OF_RANGE."""
+    if not (0.0 <= rho < s.max_rho_fraction_of_c * s.nechad_c):
+        return None
+    return s.nechad_a * rho / (1.0 - rho / s.nechad_c)
 
 
 # ---------------------------------------------------------------------------
@@ -715,35 +725,150 @@ class StatisticalFetcher:
             float(m.get("processing_units") or 0.0) for m in self.cache.iter_meta("l1-*.meta.json")
         )
 
-    def pu_per_chunk(self) -> dict[str, float | None]:
-        """Mean PU per full-year chunk, by request kind, from the ledger."""
-        out: dict[str, float | None] = {}
+    def pu_rates(self, plan: RunPlan | None = None) -> dict[str, dict[str, Any]]:
+        """PU per chunk-day by request kind, spend-weighted over the ledger (total PU /
+        total days requested), else FALLBACK_PU_PER_YEAR / 365.
+
+        Spend-weighted, not a mean of per-request rates: on 2026-09-21 two cheap
+        pre-2018 probe years (one satellite, fewer acquisitions) pulled a plain mean
+        ~25% below the 2024-2025 cost, and the first full-run estimate undershot."""
+        out: dict[str, dict[str, Any]] = {}
         metas = self.cache.iter_meta("l1-*.meta.json")
         for kind in (WATER, RIPARIAN):
-            values = [
-                float(m["processing_units"])
-                for m in metas
-                if m.get("kind") == kind
-                and m.get("processing_units") is not None
-                and m["params"]["start"][5:] == "01-01"
-                and m["params"]["end"][5:] == "12-31"
-            ]
-            out[kind] = sum(values) / len(values) if values else None
+            spent, days = 0.0, 0
+            samples = 0
+            for m in metas:
+                if m.get("kind") != kind or m.get("processing_units") is None:
+                    continue
+                span = date.fromisoformat(m["params"]["end"]) - date.fromisoformat(
+                    m["params"]["start"]
+                )
+                spent += float(m["processing_units"])
+                days += span.days + 1
+                samples += 1
+            if samples:
+                out[kind] = {"pu_per_day": spent / days, "source": "ledger", "samples": samples}
+            else:
+                out[kind] = {
+                    "pu_per_day": FALLBACK_PU_PER_YEAR[kind] / 365,
+                    "source": "fallback",
+                    "samples": 0,
+                }
         return out
 
+    @staticmethod
+    def task_pu(task: Task, rates: dict[str, dict[str, Any]]) -> float:
+        return float(rates[task.kind]["pu_per_day"]) * ((task.end - task.start).days + 1)
 
-# Used only when the ledger has no full-year sample yet: measured on 2026-09-21 as
-# 0.28 PU for one reach-month (8 input bands) -> ~3.4 PU per reach-year for the water
-# request; the riparian request has 6 input bands and a wider box.
-FALLBACK_PU_PER_CHUNK = {WATER: 3.4, RIPARIAN: 3.4}
+
+# Used only when the ledger has no sample yet: measured on 2026-09-21 as 3.41 PU per
+# reach-year for the water request (8 input bands) and 2.43 PU per reach-year for the
+# riparian request (6 bands). Every reach corridor is far below Sentinel Hub's minimum
+# billed area, so a request costs (minimum area) x (bands / 3) x (acquisitions): the rate
+# is per acquisition, uniform across reaches, and a window costs its share of a year.
+FALLBACK_PU_PER_YEAR = {WATER: 3.4, RIPARIAN: 2.43}
+
+
+# ---------------------------------------------------------------------------
+# run plan (config/sentinel2.yaml -> plan)
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class RunPlan:
+    water_years: tuple[int, ...]
+    water_observable_only: bool
+    riparian_years: tuple[int, ...]
+    riparian_window: tuple[str, str]  # ("MM-DD", "MM-DD"), inclusive
+    probe_years: tuple[int, ...]
+
+    @classmethod
+    def from_config(cls, s2: dict[str, Any]) -> RunPlan:
+        p = s2["plan"]
+        return cls(
+            water_years=tuple(int(y) for y in p["water"]["years"]),
+            water_observable_only=bool(p["water"]["observable_only"]),
+            riparian_years=tuple(int(y) for y in p["riparian"]["years"]),
+            riparian_window=(str(p["riparian"]["window"][0]), str(p["riparian"]["window"][1])),
+            probe_years=tuple(int(y) for y in p["pre_2018_probe"]["years"]),
+        )
+
+    def window_days(self) -> int:
+        lo, hi = (date.fromisoformat(f"2001-{md}") for md in self.riparian_window)
+        return (hi - lo).days + 1
+
+
+def water_chunk(year: int, today: date) -> tuple[date, date] | None:
+    lo, hi = date(year, 1, 1), min(date(year, 12, 31), today)
+    return (lo, hi) if lo <= hi else None
+
+
+def riparian_chunk(year: int, window: tuple[str, str], today: date) -> tuple[date, date] | None:
+    lo = date.fromisoformat(f"{year}-{window[0]}")
+    hi = date.fromisoformat(f"{year}-{window[1]}")
+    return (lo, hi) if hi <= today else None  # an unfinished window is not requested
+
+
+def plan_tasks(
+    reaches: list[dict[str, Any]], plan: RunPlan, today: date, *, riparian: bool = True
+) -> tuple[list[Task], dict[str, int]]:
+    """Tasks in run order: water for observable reaches year by year in plan order, then
+    the riparian windows. Returns (tasks, skipped counts by reason)."""
+    skipped: Counter[str] = Counter()
+    water_reaches = reaches
+    if plan.water_observable_only:
+        water_reaches = [r for r in reaches if r["observable"] is True]
+        skipped["WATER_UNOBSERVABLE_REACH"] = len(reaches) - len(water_reaches)
+    tasks: list[Task] = []
+    for year in plan.water_years:
+        chunk = water_chunk(year, today)
+        if chunk is None:
+            skipped["WATER_YEAR_IN_FUTURE"] += len(water_reaches)
+            continue
+        tasks += [Task(r["reach_id"], WATER, *chunk, r["line"]) for r in water_reaches]
+    if riparian:
+        for year in plan.riparian_years:
+            chunk = riparian_chunk(year, plan.riparian_window, today)
+            if chunk is None:
+                skipped["RIPARIAN_WINDOW_NOT_COMPLETE"] += len(reaches)
+                continue
+            tasks += [Task(r["reach_id"], RIPARIAN, *chunk, r["line"]) for r in reaches]
+    return tasks, dict(skipped)
+
+
+def summarise_riparian_window(
+    reach_id: str, lo: date, hi: date, rows: list[dict[str, Any]], s: S2Settings
+) -> dict[str, Any]:
+    """One reach's midsummer window -> one row: median NDVI over the window's clear
+    acquisitions. No clear acquisition -> NULL with a flag, never a fill."""
+    classified = [
+        classify_riparian(r, s)
+        for r in sorted(rows, key=lambda r: r["date"])
+        if int(r.get("r_data_pixels", 0)) > 0
+    ]
+    ok = [float(c["riparian_ndvi"]) for c in classified if c["riparian_flag"] == "OK"]
+    if ok:
+        flag = "OK"
+    elif classified:
+        flag = "NO_CLEAR_ACQUISITION"
+    else:
+        flag = "NO_ACQUISITION"
+    return {
+        "reach_id": reach_id,
+        "year": lo.year,
+        "window_start": lo,
+        "window_end": hi,
+        "riparian_ndvi_median": float(pd.Series(ok).median()) if ok else None,
+        "n_acquisitions": len(classified),
+        "n_clear": len(ok),
+        "flag": flag,
+        "flag_counts": dict(Counter(c["riparian_flag"] for c in classified)),
+    }
 
 
 # ---------------------------------------------------------------------------
 # reaches in, rows out
 # ---------------------------------------------------------------------------
 def load_reaches(city: str) -> list[dict[str, Any]]:
-    """Reaches from PostGIS, observable first (by median water pixels), so a budget-capped
-    run spends on reaches that carry optical signal."""
+    """Reaches from PostGIS, observable first (by median water pixels)."""
     from sqlalchemy import text
 
     from core.db import session_scope
@@ -773,8 +898,8 @@ def load_reaches(city: str) -> list[dict[str, Any]]:
 
 
 def write_observations(rows: pd.DataFrame, reach_ids: list[str], start: date, end: date) -> int:
-    """Replace this run's S2 rows for these reaches and dates. Delete-then-insert rather
-    than upsert, so an acquisition that is no longer an observation (e.g. a changed rule)
+    """Replace the S2 rows for these reaches and dates. Delete-then-insert rather than
+    upsert, so an acquisition that is no longer an observation (e.g. a changed rule)
     does not linger."""
     from sqlalchemy import text
 
@@ -793,24 +918,31 @@ def write_observations(rows: pd.DataFrame, reach_ids: list[str], start: date, en
     )
 
 
-def write_interim(frame: pd.DataFrame, city: str) -> Any:
-    """Merge into data/interim/s2_<city>.parquet by reach (a --limit run must not erase
-    reaches fetched earlier)."""
-    path = INTERIM_DIR / f"s2_{city}.parquet"
+def write_riparian(rows: pd.DataFrame) -> int:
+    from core.db import bulk_upsert
+
+    return bulk_upsert(rows, "riparian_ndvi_window", ["reach_id", "year"])
+
+
+def write_interim(frame: pd.DataFrame, city: str, name: str, keys: list[str]) -> Any:
+    """Merge into data/interim/<name>_<city>.parquet, replacing previous rows that share
+    `keys` with the new frame (a partial run must not erase what an earlier run wrote)."""
+    path = INTERIM_DIR / f"{name}_{city}.parquet"
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         previous = pd.read_parquet(path)
-        previous = previous[~previous["reach_id"].isin(frame["reach_id"].unique())]
+        if set(keys) <= set(previous.columns):
+            new_keys = frame[keys].drop_duplicates()
+            merged = previous.merge(new_keys, on=keys, how="left", indicator=True)
+            previous = previous[(merged["_merge"] == "left_only").to_numpy()]
         frame = pd.concat([previous, frame], ignore_index=True)
-    frame.sort_values(["reach_id", "obs_date"]).to_parquet(path, index=False)
+    frame.sort_values(keys).to_parquet(path, index=False)
     return path
 
 
 def fetch_observations(
     city: str,
     *,
-    start: date | None = None,
-    end: date | None = None,
     reach_ids: Sequence[str] | None = None,
     limit: int | None = None,
     max_pu: float | None = None,
@@ -818,13 +950,13 @@ def fetch_observations(
     estimate_only: bool = False,
     write_db: bool = True,
     refresh: bool = False,
+    today: date | None = None,
 ) -> dict[str, Any]:
-    city_cfg = load_city_config(city)
+    """The planned L1 run (config/sentinel2.yaml -> plan). See the module docstring."""
+    s2 = load_config("sentinel2")
     s = load_settings(city)
-    start = start or as_date(city_cfg["satellite"]["start_date"])
-    end = end or datetime.now(UTC).date()
-    chunks = year_chunks(start, end)
-    kinds = [WATER, RIPARIAN] if riparian else [WATER]
+    plan = RunPlan.from_config(s2)
+    today = today or datetime.now(UTC).date()
 
     reaches = load_reaches(city)
     if reach_ids:
@@ -837,67 +969,58 @@ def fetch_observations(
         reaches = reaches[:limit]
 
     fetcher = StatisticalFetcher(s, refresh=refresh)
-    all_tasks = [
-        Task(r["reach_id"], kind, lo, hi, r["line"])
-        for r in reaches
-        for kind in kinds
-        for lo, hi in chunks
-    ]
+    all_tasks, skipped = plan_tasks(reaches, plan, today, riparian=riparian)
     uncached = [t for t in all_tasks if fetcher.cached(t) is None]
-    rate = fetcher.pu_per_chunk()
-    rate_source = {k: "ledger" if rate[k] is not None else "fallback" for k in kinds}
-    per_kind: dict[str, float] = {}
-    for k in kinds:
-        measured = rate[k]
-        per_kind[k] = measured if measured is not None else FALLBACK_PU_PER_CHUNK[k]
-    estimate = sum(per_kind[t.kind] for t in uncached)
-    log.info(
-        "l1.plan",
-        city=city,
-        reaches=len(reaches),
-        observable=sum(1 for r in reaches if r["observable"]),
-        window=f"{start}..{end}",
-        chunks_per_reach=len(chunks),
-        requests_total=len(all_tasks),
-        requests_cached=len(all_tasks) - len(uncached),
-        requests_to_fetch=len(uncached),
-        pu_estimate=round(estimate, 1),
-        pu_rate=per_kind,
-        pu_rate_source=rate_source,
-        pu_all_time=round(fetcher.all_time_pu(), 2),
-    )
-    plan = {
+    rates = fetcher.pu_rates(plan)
+    estimate_by: dict[str, float] = {}
+    for t in uncached:
+        k = f"{t.kind}:{t.start.year}"
+        estimate_by[k] = estimate_by.get(k, 0.0) + fetcher.task_pu(t, rates)
+    estimate = float(sum(estimate_by.values()))
+    all_time = fetcher.all_time_pu()
+    plan_out = {
         "reaches": len(reaches),
+        "water_reaches": len({t.reach_id for t in all_tasks if t.kind == WATER}),
+        "riparian_reaches": len({t.reach_id for t in all_tasks if t.kind == RIPARIAN}),
+        "water_years": list(plan.water_years),
+        "riparian_window": list(plan.riparian_window),
         "requests_total": len(all_tasks),
+        "requests_cached": len(all_tasks) - len(uncached),
         "requests_to_fetch": len(uncached),
-        "pu_estimate": estimate,
+        "requests_to_fetch_by_kind": dict(Counter(t.kind for t in uncached)),
+        "skipped": skipped,
+        "pu_rates": rates,
+        "pu_estimate": round(estimate, 1),
+        "pu_estimate_by_kind_year": {k: round(v, 1) for k, v in sorted(estimate_by.items())},
+        "pu_all_time_l1": round(all_time, 2),
     }
+    log.info("l1.plan", city=city, **{k: v for k, v in plan_out.items() if k != "pu_rates"})
     if estimate_only:
-        return plan
+        return plan_out
 
-    frames: list[pd.DataFrame] = []
-    flag_counts: Counter[str] = Counter()
-    riparian_counts: Counter[str] = Counter()
+    obs_flags: Counter[str] = Counter()
+    rip_flags: Counter[str] = Counter()
+    water_frames: list[pd.DataFrame] = []
+    rip_rows: list[dict[str, Any]] = []
     pu_run = 0.0
     pu_missing_header = 0
     network_calls = 0
     failed: list[str] = []
+    step = s.batch_size * 2
 
     with stage(log, "l1_satellite", city=city) as counters:
         rows_in = 0
-        for b in range(0, len(reaches), s.batch_size):
-            batch = reaches[b : b + s.batch_size]
-            tasks = [t for t in all_tasks if t.reach_id in {r["reach_id"] for r in batch}]
+        for b in range(0, len(all_tasks), step):
+            tasks = all_tasks[b : b + step]
             to_fetch = [t for t in tasks if fetcher.cached(t) is None]
-            batch_estimate = sum(per_kind[t.kind] for t in to_fetch)
+            batch_estimate = sum(fetcher.task_pu(t, rates) for t in to_fetch)
             if max_pu is not None and pu_run + batch_estimate > max_pu:
                 raise BudgetExceeded(
-                    f"Stopping before batch {b // s.batch_size + 1}: {pu_run:.1f} PU spent this "
-                    f"run + ~{batch_estimate:.1f} estimated > --max-pu {max_pu:g}. Reaches "
-                    f"already processed are written; re-run with a higher cap to continue - "
-                    f"cached chunks cost nothing."
+                    f"Stopping before task {b + 1}/{len(all_tasks)}: {pu_run:.1f} PU spent this "
+                    f"run + ~{batch_estimate:.1f} estimated > --max-pu {max_pu:g}. Everything "
+                    "processed so far is written; re-run with a higher cap to continue - cached "
+                    "chunks cost nothing."
                 )
-
             payloads: dict[Task, dict[str, Any]] = {}
             for t in tasks:
                 cached = fetcher.cached(t)
@@ -910,7 +1033,7 @@ def fetch_observations(
                     return task, payload, pu, ""
                 except NonRetryableRequestError:
                     raise
-                except Exception as exc:  # noqa: BLE001 - counted and raised after the batch
+                except Exception as exc:  # noqa: BLE001 - counted and raised after the run
                     return task, None, None, f"{type(exc).__name__}: {exc}"
 
             with ThreadPoolExecutor(max_workers=s.max_threads) as pool:
@@ -925,74 +1048,79 @@ def fetch_observations(
                         pu_missing_header += 1
                     pu_run += pu or 0.0
 
-            batch_frames = []
-            for reach in batch:
-                rid = reach["reach_id"]
-                reach_tasks = [t for t in tasks if t.reach_id == rid]
-                if any(t not in payloads for t in reach_tasks):
-                    # Some chunk failed after retries: writing a partial year series would
-                    # look like a gap in the data. Skip the reach; it is in `failed`.
-                    counters.drop(1, "REACH_INCOMPLETE")
+            batch_water: dict[tuple[date, date], list[pd.DataFrame]] = {}
+            batch_rip: list[dict[str, Any]] = []
+            for t in tasks:
+                if t not in payloads:
+                    counters.drop(1, f"{t.kind.upper()}_CHUNK_FAILED")
                     continue
-                water_rows: list[dict[str, Any]] = []
-                riparian_rows: list[dict[str, Any]] | None = [] if riparian else None
-                failed_days: list[str] = []
-                for t in reach_tasks:
-                    if t.kind == WATER:
-                        w, f = parse_water_payload(payloads[t])
-                        water_rows += w
-                        failed_days += f
-                    else:
-                        r, _ = parse_riparian_payload(payloads[t])
-                        assert riparian_rows is not None
-                        riparian_rows += r
-                parsed = build_reach_rows(rid, water_rows, riparian_rows, failed_days, s)
-                rows_in += parsed.returned
-                for reason, n in parsed.dropped.items():
-                    counters.drop(n, reason)
-                if parsed.rows:
+                if t.kind == WATER:
+                    w, f = parse_water_payload(payloads[t])
+                    parsed = build_reach_rows(t.reach_id, w, None, f, s)
+                    rows_in += parsed.returned
+                    for reason, n in parsed.dropped.items():
+                        counters.drop(n, reason)
                     frame = pd.DataFrame(parsed.rows)
-                    flag_counts.update(frame["quality_flag"])
-                    riparian_counts.update(frame["riparian_flag"])
-                    batch_frames.append(frame)
-
-            if batch_frames:
-                batch_frame = pd.concat(batch_frames, ignore_index=True)
-                if write_db:
-                    write_observations(
-                        batch_frame, list(batch_frame["reach_id"].unique()), start, end
+                    if not frame.empty:
+                        obs_flags.update(frame["quality_flag"])
+                    batch_water.setdefault((t.start, t.end), []).append(
+                        frame if not frame.empty else pd.DataFrame(columns=OBS_COLUMNS)
                     )
-                frames.append(batch_frame)
+                else:
+                    r, _ = parse_riparian_payload(payloads[t])
+                    row = summarise_riparian_window(t.reach_id, t.start, t.end, r, s)
+                    rip_flags[row["flag"]] += 1
+                    batch_rip.append(row)
+
+            for (lo, hi), frames in batch_water.items():
+                chunk = pd.concat([f for f in frames if not f.empty] or frames, ignore_index=True)
+                ids = sorted({t.reach_id for t in tasks if t.kind == WATER and t.start == lo})
+                if write_db:
+                    # Delete-then-insert per chunk: a reach-year with no acquisitions left
+                    # after re-classification must not keep stale rows.
+                    write_observations(chunk, ids, lo, hi)
+                if not chunk.empty:
+                    water_frames.append(chunk)
+            if batch_rip:
+                if write_db:
+                    write_riparian(pd.DataFrame(batch_rip))
+                rip_rows += batch_rip
 
             log.info(
                 "l1.batch",
-                batch=b // s.batch_size + 1,
-                of=math.ceil(len(reaches) / s.batch_size),
-                reaches_done=min(b + s.batch_size, len(reaches)),
+                tasks_done=min(b + step, len(all_tasks)),
+                of=len(all_tasks),
                 network_calls=network_calls,
                 pu_batch_estimate=round(batch_estimate, 2),
                 pu_run=round(pu_run, 2),
                 pu_all_time=round(fetcher.all_time_pu(), 2),
             )
 
-        if not frames:
+        if not water_frames and not rip_rows:
             raise RuntimeError(
-                f"L1 produced no observations for {city} ({len(failed)} failed requests). "
+                f"L1 produced nothing for {city} ({len(failed)} failed requests). "
                 "Refusing to report success on nothing."
             )
-        result = pd.concat(frames, ignore_index=True)
+        interim = {}
+        if water_frames:
+            water = pd.concat(water_frames, ignore_index=True)
+            water["year"] = pd.to_datetime(water["obs_date"]).dt.year
+            interim["water"] = str(write_interim(water, city, "s2", ["reach_id", "year"]))
+        if rip_rows:
+            interim["riparian"] = str(
+                write_interim(pd.DataFrame(rip_rows), city, "s2_riparian", ["reach_id", "year"])
+            )
         counters.record(
             rows_in=rows_in,
-            rows_out=len(result),
-            quality_flags=dict(flag_counts),
-            riparian_flags=dict(riparian_counts),
+            rows_out=sum(len(f) for f in water_frames),
+            quality_flags=dict(obs_flags),
+            riparian_window_flags=dict(rip_flags),
             network_calls=network_calls,
             pu_run=round(pu_run, 2),
             pu_all_time=round(fetcher.all_time_pu(), 2),
             pu_missing_header=pu_missing_header,
             failed_requests=len(failed),
         )
-        interim = write_interim(result, city)
 
     if pu_missing_header:
         log.warning(
@@ -1002,37 +1130,75 @@ def fetch_observations(
         )
     if failed:
         raise RuntimeError(
-            f"{len(failed)} Statistical API requests failed after retries; their reaches were "
+            f"{len(failed)} Statistical API requests failed after retries; their chunks were "
             f"not written. First: {failed[0]}"
         )
     return {
-        **plan,
-        "rows": len(result),
-        "quality_flags": dict(flag_counts),
-        "riparian_flags": dict(riparian_counts),
-        "pu_run": pu_run,
-        "interim": str(interim),
+        **plan_out,
+        "observation_rows": sum(len(f) for f in water_frames),
+        "quality_flags": dict(obs_flags),
+        "riparian_windows": len(rip_rows),
+        "riparian_window_flags": dict(rip_flags),
+        "pu_run": round(pu_run, 2),
+        "pu_all_time_l1": round(fetcher.all_time_pu(), 2),
+        "interim": interim,
     }
+
+
+def probe_pre_2018(city: str, *, reach_id: str | None = None) -> dict[str, Any]:
+    """Fetch the plan's pre-2018 years for ONE reach (default: the most observable) and
+    report usable rows per year. Written to nothing - the decision to extend the series
+    backwards is made on this report."""
+    s2 = load_config("sentinel2")
+    s = load_settings(city)
+    plan = RunPlan.from_config(s2)
+    reaches = [r for r in load_reaches(city) if r["observable"] is True]
+    reach = (
+        next((r for r in reaches if r["reach_id"] == reach_id), None) if reach_id else reaches[0]
+    )
+    if reach is None:
+        raise ValueError(f"{reach_id} is not an observable {city} reach")
+    fetcher = StatisticalFetcher(s)
+    pu = 0.0
+    years: dict[str, Any] = {}
+    for year in plan.probe_years:
+        task = Task(reach["reach_id"], WATER, date(year, 1, 1), date(year, 12, 31), reach["line"])
+        payload = fetcher.cached(task)
+        if payload is None:
+            payload, spent = fetcher.fetch(task)
+            pu += spent or 0.0
+        w, f = parse_water_payload(payload)
+        parsed = build_reach_rows(task.reach_id, w, None, f, s)
+        flags = Counter(r["quality_flag"] for r in parsed.rows)
+        years[str(year)] = {
+            "acquisitions_returned": parsed.returned,
+            "rows": len(parsed.rows),
+            "usable_OK": flags.get("OK", 0),
+            "quality_flags": dict(flags),
+            "dropped": dict(parsed.dropped),
+        }
+    return {"reach_id": reach["reach_id"], "years": years, "pu_spent": round(pu, 2)}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="L1 Sentinel-2 observations")
     parser.add_argument("--city", default="coimbra")
-    parser.add_argument("--start", type=date.fromisoformat, default=None)
-    parser.add_argument("--end", type=date.fromisoformat, default=None, help="default: today")
     parser.add_argument("--reach", action="append", dest="reach_ids", help="repeatable")
     parser.add_argument("--limit", type=int, default=None, help="first N reaches")
     parser.add_argument("--max-pu", type=float, default=None, help="stop before exceeding")
-    parser.add_argument("--no-riparian", action="store_true", help="water request only")
+    parser.add_argument("--no-riparian", action="store_true", help="water requests only")
     parser.add_argument("--estimate", action="store_true", help="print the PU plan and exit")
+    parser.add_argument("--probe-pre-2018", action="store_true", help="one reach, 2016-2017")
     parser.add_argument("--no-db", action="store_true")
     parser.add_argument("--refresh", action="store_true", help="ignore the cache (spends PUs)")
     args = parser.parse_args(argv)
 
+    if args.probe_pre_2018:
+        rid = args.reach_ids[0] if args.reach_ids else None
+        print(json.dumps(probe_pre_2018(args.city, reach_id=rid), indent=2, default=str))
+        return 0
     summary = fetch_observations(
         args.city,
-        start=args.start,
-        end=args.end,
         reach_ids=args.reach_ids,
         limit=args.limit,
         max_pu=args.max_pu,

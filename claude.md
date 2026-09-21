@@ -73,7 +73,7 @@ OSM waterways → reaches → MERIT Hydro upstream catchments
    ├── Sentinel-2 (Sentinel Hub Statistical API) → turbidity/NDCI/MNDWI + water_pixel_count
    └── Open-Meteo (archive for training, forecast for live) → API, antecedent dry days,
        first-flush index, temp×low-flow
-        → pooled model with reach embedding → P10/P50/P90 + burstiness
+        → pooled model with reach embedding → P10/P50/P90 + CDF
              ├── alert engine (probability + guardrails + SHAP attribution + exposure)
              ├── scenario engine (cited coefficients perturb drivers → re-infer)
              └── prioritisation (uncertainty × risk × exposure)
@@ -103,7 +103,7 @@ Consequences you must respect in code:
 ## Stack
 
 **Backend:** Python 3.11, FastAPI, PostGIS, GeoPandas, Shapely, `sentinelhub-py`,
-`pysheds`, LightGBM, PyTorch, PyWavelets, SHAP
+`pysheds`, LightGBM, PyTorch, `neuralhydrology`, `captum`, SHAP
 **Frontend:** React + TypeScript + Vite, MapLibre GL, Zustand, Tailwind, Recharts
 **Run:** `docker compose up` for Postgres/PostGIS; `uv` or `venv` for Python
 
@@ -167,13 +167,23 @@ Update this section as you go so a fresh session knows where things stand.
 ```
 Day 0  — [ ] accounts, smoke tests
 Day 1  — [ ] L0 network + catchments + observability gate
-Day 2  — [ ] L1 satellite + L2 drivers
-Day 3  — [~] LightGBM baseline + walk-forward eval        ← first shippable system
-           code + 41 tests done (models/baseline_gbm.py, models/evaluate.py,
-           engine/probability.py; `make train`, `make evaluate`). GATE NOT MET: L1 has
-           only 2 reaches × 2023 (57 OK obs), so val/test have 0 targets and training
-           refuses (InsufficientTrainingData). Needs a full-period L1 run + `make dataset`.
-Day 4  — [ ] alert engine + guardrails + exposure
+Day 2  — [x] L1 satellite + L2 drivers
+           L1 plan in config/sentinel2.yaml: water indices for the 51 observable reaches,
+           2018-2026 (14,141 OK obs); riparian NDVI = one July window per reach-year, all
+           353 reaches -> riparian_ndvi_window. Turbidity = ACOLITE S2 MSI B4 Nechad coef
+           (cited in sentinel2.yaml), displayed "turbidity index", no unit. 2016-17 probed
+           on CMB-0056 only (20 + 37 OK) - not fetched for the rest. Live forecast pinned
+           to ecmwf_ifs; as-issued 00 UTC runs via `make asissued` (Open-Meteo budgeted:
+           resumes where it stopped). S2C shift check: scripts/check_s2_platform_shift.py.
+Day 3  — [x] LightGBM baseline + walk-forward eval        ← first shippable system
+           Variants A (reach_id) / B (no reach identity), 7 quantiles, urban_fraction
+           dropped while PROXY_*, evaluated ORACLE vs ASISSUED weather; `make evaluate`
+           writes metrics.json + forecasts table. Thresholds: per-reach seasonal (engine/
+           thresholds.py). After L1 riparian finishes: `make static dataset train evaluate`.
+Day 4  — [x] alert engine + guardrails + exposure
+           engine/alerts.py (5 guardrails, INSUFFICIENT_EVIDENCE first-class), tests/
+           test_guardrails.py breaks each one; engine/exposure.py + `make exposure`.
+           Not yet wired: a job that composes live alerts from forecasts + DB state.
 Day 5  — [ ] SAGE-TS hybrid (hard gate EOD)
 Day 6  — [ ] scenario engine + API
 Day 7  — [ ] frontend: map, detail, alerts
@@ -192,7 +202,7 @@ it is the Track 6 requirement most other entries will miss.
 1. Climate scenarios → cut
 2. FHIR export → cut
 3. Pune transfer demo → cut
-4. SAGE-TS hybrid → fall back to LightGBM, report the comparison
+4. EA-LSTM → fall back to LightGBM, report the comparison
 5. Prioritisation panel → cut
 6. Scenario workbench → only if the alternative is not shipping
 

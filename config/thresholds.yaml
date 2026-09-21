@@ -1,26 +1,54 @@
-# Exceedance thresholds per variable.
+# Exceedance thresholds per variable - PER REACH, PER SEASON.
 #
-# Where an EEA/SNIRH water-quality class exists, use it and say so on the alert.
-# Otherwise derive from the reach's own seasonal historical distribution - also
-# stated on the alert. `derivation` is rendered in the UI; it is not a comment.
+# No EEA/SNIRH water-quality class exists for a satellite optical index, so every
+# threshold is derived from the reach's OWN historical distribution in the same season:
 #
-# Values are left null until Day 4. A null threshold means the alert engine
-# returns INSUFFICIENT_EVIDENCE for that variable, never a guessed number.
+#   threshold(reach, variable, season) = percentile of that reach's OK Sentinel-2
+#                                        observations in that season, over the fitting
+#                                        period only
+#
+# Computed by engine/thresholds.py (pure). The SAME table is used by models/evaluate.py
+# to score the reliability diagram and by engine/alerts.py to issue alerts, so the
+# probability that is calibrated is the probability that is alerted on.
+#
+# Fitting period: observations dated <= the fit's training cut-off (splits.train_end for
+# the val fold, val_end for the test fold, the last training date for production). A
+# threshold never sees the period it is used to judge.
+#
+# A reach-season with fewer than min_obs observations has NO threshold. That is not
+# filled from neighbours or from the pooled distribution: the alert engine returns
+# INSUFFICIENT_EVIDENCE (reason NO_THRESHOLD). Driver-only reaches never have one.
+#
+# `derivation` and `display_name` are rendered in the UI and on every alert.
+
+seasons:
+  # Meteorological seasons, northern hemisphere (Coimbra). A city in another climate
+  # overrides this block in its own config (e.g. Pune: monsoon seasons).
+  DJF: [12, 1, 2]
+  MAM: [3, 4, 5]
+  JJA: [6, 7, 8]
+  SON: [9, 10, 11]
 
 variables:
   turbidity_proxy:
-    units: dimensionless        # Nechad-style optical proxy, not NTU
-    derivation: seasonal_percentile
+    display_name: turbidity index
+    units: dimensionless index    # Nechad-form optical index on L2A reflectance; no turbidity unit
+    derivation: per_reach_seasonal_percentile
     percentile: 0.90
-    absolute_value: null
-    source: null
+    min_obs: 8
+    source: >-
+      reach's own OK Sentinel-2 turbidity index observations in the same meteorological
+      season, fitting period only
 
   ndci:
-    units: dimensionless
-    derivation: seasonal_percentile
+    display_name: chlorophyll index (NDCI)
+    units: dimensionless index
+    derivation: per_reach_seasonal_percentile
     percentile: 0.90
-    absolute_value: null
-    source: null
+    min_obs: 8
+    source: >-
+      reach's own OK Sentinel-2 NDCI observations in the same meteorological season,
+      fitting period only
 
 guardrails:
   min_exceedance_prob: 0.60       # no alert below this
@@ -29,4 +57,11 @@ guardrails:
   unobservable_max_severity: WATCH
   drift:
     residual_window_days: 60
+    # A residual is standardised against the forecast's own spread:
+    #   z = (observed - p50) / ((p90 - p10) / 2.563)      [2.563 = z_0.9 - z_0.1]
+    # Drift fires when the recent residuals leave the calibration band - either
+    # their mean |z| exceeds this, or the share outside P10-P90 exceeds
+    # max_outside_fraction (nominal 0.20).
     max_abs_standardised_residual: 2.5
+    max_outside_fraction: 0.50
+    min_residuals: 3

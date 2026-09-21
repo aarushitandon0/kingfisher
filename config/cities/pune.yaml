@@ -46,6 +46,7 @@ weather:
   # Open-Meteo call quota for no extra information.
   query_grid_deg: 0.1
   forecast_days: 10
+  forecast_model: ecmwf_ifs          # same live model as Coimbra (see coimbra.yaml)
   variables:
     - precipitation
     - temperature_2m

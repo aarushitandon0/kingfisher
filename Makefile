@@ -2,7 +2,7 @@
 # Requires: docker compose, and a Python 3.11 env with `pip install -e ".[dev]"`.
 
 .DEFAULT_GOAL := help
-.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l2 static dataset train evaluate db-up db-down db-migrate db-revision test lint format api
+.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l1-probe l2 static asissued exposure s2-shift dataset train evaluate db-up db-down db-migrate db-revision test lint format api
 
 PY ?= python
 
@@ -35,8 +35,14 @@ observability:  ## GATE: how many reaches Sentinel-2 can actually see (Day 1)
 l1-estimate:  ## L1: print the Sentinel Hub PU plan for a full run (spends nothing)
 	$(PY) -m pipeline.l1_satellite --city $(or $(city),coimbra) --estimate
 
-l1:  ## L1: Sentinel-2 observations (make l1 max_pu=5000; observable reaches first)
+l1:  ## L1: Sentinel-2 plan in config/sentinel2.yaml (make l1 max_pu=3000)
 	$(PY) -m pipeline.l1_satellite --city $(or $(city),coimbra) $(if $(max_pu),--max-pu $(max_pu),)
+
+l1-probe:  ## L1: fetch 2016-2017 for ONE reach and report usable rows (no DB write)
+	$(PY) -m pipeline.l1_satellite --city $(or $(city),coimbra) --probe-pre-2018
+
+s2-shift:  ## L1 QA: level shift in the indices at the Sentinel-2C platform change
+	$(PY) scripts/check_s2_platform_shift.py --city $(or $(city),coimbra)
 
 l2:  ## L2: Open-Meteo drivers at catchment centroids (run after l1 for upstream state)
 	$(PY) -m pipeline.l2_drivers --city $(or $(city),coimbra)
@@ -44,13 +50,19 @@ l2:  ## L2: Open-Meteo drivers at catchment centroids (run after l1 for upstream
 static:  ## L2: static catchment attributes (land-cover adapter chain)
 	$(PY) -m pipeline.l2_static --city $(or $(city),coimbra)
 
+asissued:  ## L2: as-issued ECMWF IFS 00 UTC runs (budgeted, resumable) -> future-driver table
+	$(PY) -m pipeline.asissued_weather --city $(or $(city),coimbra) --fetch --build
+
+exposure:  ## L4: OSM + GHS-POP exposure within the buffer of every reach -> exposure_features
+	$(PY) -m pipeline.exposure_features --city $(or $(city),coimbra)
+
 dataset:  ## Modelling frame + walk-forward splits + data summary
 	$(PY) -m pipeline.build_dataset --city $(or $(city),coimbra)
 
 train:  ## L3: LightGBM quantile baseline - walk-forward fits + production fit + SHAP
 	$(PY) -m models.baseline_gbm --city $(or $(city),coimbra)
 
-evaluate:  ## L3: walk-forward metrics vs baselines -> results/metrics.json + figures
+evaluate:  ## L3: walk-forward metrics (A/B x oracle/as-issued) -> metrics.json + forecasts table
 	$(PY) -m models.evaluate --city $(or $(city),coimbra)
 
 db-up:  ## Start PostGIS and wait until it is accepting connections

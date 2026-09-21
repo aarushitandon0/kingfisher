@@ -91,6 +91,7 @@ log = get_logger(__name__)
 ARTIFACT_DIR = REPO_ROOT / "artifacts" / "models"
 KEY_COLUMNS = ["reach_id", "issued_date", "horizon", "target_date"]
 PRODUCTION = "production"
+SERVING_FIT = f"A.{PRODUCTION}"  # predict()/explain() default; scenarios use B.production
 
 
 class InsufficientTrainingData(RuntimeError):
@@ -103,6 +104,21 @@ def qname(alpha: float) -> str:
 
 
 @dataclass(frozen=True)
+class VariantSpec:
+    """A = reach_id as a feature; B = no reach identity (config baseline_gbm.variants)."""
+
+    name: str
+    reach_id: bool = True
+    drop: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "reach_id": self.reach_id, "drop": list(self.drop)}
+
+
+DEFAULT_VARIANT = VariantSpec("A")
+
+
+@dataclass(frozen=True)
 class GBMSettings:
     version: str
     quantiles: tuple[float, ...]
@@ -110,11 +126,17 @@ class GBMSettings:
     min_train_rows: int
     params: dict[str, Any]
     shap_quantiles: tuple[float, ...]
+    variants: dict[str, VariantSpec] = field(default_factory=lambda: {"A": DEFAULT_VARIANT})
+    drop_when_proxy: tuple[str, ...] = ()
 
     @classmethod
     def from_config(cls, cfg: dict[str, Any] | None = None) -> GBMSettings:
         cfg = cfg or load_config("modelling")
         g = cfg["baseline_gbm"]
+        variants = {
+            name: VariantSpec(name, bool(v["reach_id"]), tuple(v.get("drop") or ()))
+            for name, v in (g.get("variants") or {"A": {"reach_id": True}}).items()
+        }
         return cls(
             version=str(g["version"]),
             quantiles=tuple(float(a) for a in g["quantiles"]),
@@ -122,6 +144,8 @@ class GBMSettings:
             min_train_rows=int(g["min_train_rows"]),
             params=dict(g["params"]),
             shap_quantiles=tuple(float(a) for a in g["shap_quantiles"]),
+            variants=variants,
+            drop_when_proxy=tuple(g.get("drop_when_proxy") or ()),
         )
 
     def bucket_of(self, horizon: int) -> str:
@@ -157,8 +181,39 @@ def future_features(fs: FrameSettings) -> list[str]:
     return out
 
 
-def feature_names(fs: FrameSettings) -> list[str]:
+def all_features(fs: FrameSettings) -> list[str]:
+    """Every column to_long builds, whatever the variant."""
     return ["reach_id", "horizon", *base_features(fs), *future_features(fs)]
+
+
+def feature_names(
+    fs: FrameSettings, variant: VariantSpec | None = None, dropped: Iterable[str] = ()
+) -> list[str]:
+    """The model's features: all_features minus the variant's exclusions and any
+    feature dropped by policy (e.g. a static attribute that is a land-cover proxy)."""
+    v = variant or DEFAULT_VARIANT
+    out = set(v.drop) | set(dropped)
+    if not v.reach_id:
+        out.add("reach_id")
+    unknown = out - set(all_features(fs))
+    if unknown:
+        raise ValueError(f"cannot drop unknown features {sorted(unknown)}")
+    return [f for f in all_features(fs) if f not in out]
+
+
+def proxy_dropped_features(
+    gs: GBMSettings, static_flags: dict[str, dict[str, int]]
+) -> dict[str, str]:
+    """{feature: why} for every drop_when_proxy feature whose value is currently a
+    land-cover proxy on any reach (a catchment_attributes flag starting PROXY_)."""
+    out = {}
+    for f in gs.drop_when_proxy:
+        proxies = {
+            flag: n for flag, n in static_flags.get(f, {}).items() if flag.startswith("PROXY_")
+        }
+        if proxies:
+            out[f] = ", ".join(f"{flag} on {n} reaches" for flag, n in sorted(proxies.items()))
+    return out
 
 
 def _numeric(col: pd.Series, name: str) -> pd.Series:
@@ -226,7 +281,7 @@ def to_long(
             )
         parts.append(part)
     # reach_id and horizon are both keys and features - one column each.
-    cols = list(dict.fromkeys([*KEY_COLUMNS, "target", "reach_observable", *feature_names(fs)]))
+    cols = list(dict.fromkeys([*KEY_COLUMNS, "target", "reach_observable", *all_features(fs)]))
     if not parts:
         return pd.DataFrame(columns=cols)
     long = pd.concat(parts, ignore_index=True)
@@ -289,11 +344,20 @@ def fit(
     fit_name: str,
     train_end: date,
     categories: list[str],
+    variant: VariantSpec | None = None,
+    dropped: dict[str, str] | None = None,
 ) -> FittedGBM:
     """Fit every (variable, bucket, quantile) booster on `train`, which must already be
-    embargoed at `train_end` (pipeline.build_dataset.walk_forward / embargo)."""
+    embargoed at `train_end` (pipeline.build_dataset.walk_forward / embargo).
+
+    `variant` picks the feature set (A: with reach_id; B: without reach identity);
+    `dropped` is {feature: reason} for features removed by policy, recorded in the
+    manifest."""
     validate_settings(gs, fs)
-    features = feature_names(fs)
+    variant = variant or DEFAULT_VARIANT
+    dropped = dict(dropped or {})
+    features = feature_names(fs, variant, dropped)
+    categorical = ["reach_id"] if "reach_id" in features else []
     boosters: dict[tuple[str, str, float], lgb.Booster] = {}
     rows: dict[str, int] = {}
     unused: dict[str, list[str]] = {}
@@ -317,7 +381,7 @@ def fit(
             digest.update(_data_fingerprint(long, features).encode())
             X, y = long[features], long["target"].to_numpy()
             for alpha in gs.quantiles:
-                ds = lgb.Dataset(X, y, categorical_feature=["reach_id"], free_raw_data=True)
+                ds = lgb.Dataset(X, y, categorical_feature=categorical, free_raw_data=True)
                 boosters[(variable, bucket, alpha)] = lgb.train(
                     _lgb_params(gs, alpha), ds, num_boost_round=int(gs.params["n_estimators"])
                 )
@@ -331,6 +395,8 @@ def fit(
             "min_train_rows": gs.min_train_rows,
         },
         "features": features,
+        "variant": variant.as_dict(),
+        "dropped_features": dropped,
         "future_driver_columns": fs.future_driver_columns,
         "train_end": str(train_end),
         "lightgbm": lgb.__version__,
@@ -453,7 +519,10 @@ def load(
         params=dict(s["params"]),
         shap_quantiles=GBMSettings.from_config().shap_quantiles,
     )
-    if manifest["features"] != feature_names(fs):
+    v = manifest.get("variant") or DEFAULT_VARIANT.as_dict()
+    variant = VariantSpec(v["name"], bool(v["reach_id"]), tuple(v["drop"]))
+    expected = feature_names(fs, variant, manifest.get("dropped_features") or {})
+    if manifest["features"] != expected:
         raise RuntimeError(
             f"{version} was trained on a different feature list than the current config - retrain"
         )
@@ -549,7 +618,7 @@ def predict(
     horizon: int,
     variable: str = "turbidity_proxy",
     *,
-    fit_name: str = PRODUCTION,
+    fit_name: str = SERVING_FIT,
 ) -> dict[str, Any]:
     """{p10, p50, p90} for one reach, issue date and horizon (days), plus provenance.
 
@@ -582,7 +651,7 @@ def explain(
     variable: str = "turbidity_proxy",
     *,
     alpha: float = 0.9,
-    fit_name: str = PRODUCTION,
+    fit_name: str = SERVING_FIT,
 ) -> dict[str, Any]:
     """TreeSHAP contributions for one forecast quantile, largest magnitude first."""
     model, long, _ = _issue_row(reach_id, issued_date, horizon, variable, fit_name)
@@ -614,114 +683,220 @@ def explain(
 # ---------------------------------------------------------------------------
 # orchestration
 # ---------------------------------------------------------------------------
+ORACLE, ASISSUED = "ORACLE", "ASISSUED"
+
+
+def substitute_future_drivers(
+    long: pd.DataFrame, asissued: pd.DataFrame, fs: FrameSettings
+) -> pd.DataFrame:
+    """Replace the archive (oracle) t+h driver features with as-issued ones.
+
+    asissued: reach_id, issued_date, horizon, and the future-driver columns named as in
+    pipeline.asissued_weather (precip_mm, ..., precip_fut_cum_mm). Rows with no as-issued
+    run are DROPPED - an as-issued score exists only where a forecast existed, and the
+    caller compares oracle and as-issued on the rows both have.
+    """
+    cols = list(fs.future_driver_columns)
+    src = asissued[["reach_id", "issued_date", "horizon", *cols, "precip_fut_cum_mm"]]
+    src = src.rename(columns={c: f"{c}_fut" for c in cols}).assign(
+        _rid=src["reach_id"].astype(str),
+        horizon=src["horizon"].astype("float64"),
+        issued_date=pd.to_datetime(src["issued_date"]).dt.date,
+    )
+    src = src.drop(columns="reach_id")
+    base = long.drop(columns=future_features(fs)).assign(_rid=long["reach_id"].astype(str))
+    merged = base.merge(
+        src, on=["_rid", "issued_date", "horizon"], how="inner", validate="many_to_one"
+    ).drop(columns="_rid")
+    merged["reach_id"] = pd.Categorical(
+        merged["reach_id"].astype(str), categories=long["reach_id"].cat.categories
+    )
+    return merged[list(long.columns)]
+
+
 def forecast_and_explain(
-    model: FittedGBM, rows: pd.DataFrame, *, require_target: bool
+    model: FittedGBM,
+    rows: pd.DataFrame,
+    *,
+    require_target: bool,
+    asissued: pd.DataFrame | None = None,
+    explain: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Predict (and TreeSHAP-explain) every variable x horizon of `rows`. With
+    `asissued`, the t+h drivers are replaced by as-issued forecasts first (rows without
+    one are dropped) and the output is labelled weather=ASISSUED."""
     preds, shaps = [], []
-    for variable in model.frame_settings.variables:
+    fs = model.frame_settings
+    vname = model.manifest.get("variant", DEFAULT_VARIANT.as_dict())["name"]
+    for variable in fs.variables:
         long = to_long(
-            rows,
-            model.frame_settings,
-            variable,
-            model.frame_settings.horizons,
-            model.categories,
-            require_target=require_target,
+            rows, fs, variable, fs.horizons, model.categories, require_target=require_target
         )
+        if asissued is not None and not long.empty:
+            long = substitute_future_drivers(long, asissued, fs)
         if long.empty:
             continue
         p = predict_long(model, long, variable)
-        p["future_drivers_missing"] = long[future_features(model.frame_settings)].isna().sum(axis=1)
+        p["future_drivers_missing"] = long[future_features(fs)].isna().sum(axis=1).to_numpy()
         preds.append(p)
-        shaps.append(shap_long(model, long, variable))
+        if explain:
+            shaps.append(shap_long(model, long, variable))
     pred = pd.concat(preds, ignore_index=True) if preds else pd.DataFrame()
     shap = pd.concat(shaps, ignore_index=True) if shaps else pd.DataFrame()
     if not pred.empty:
         pred["reach_id"] = pred["reach_id"].astype(str)
+        pred["weather"] = ASISSUED if asissued is not None else ORACLE
+        pred["variant"] = vname
+    if not shap.empty:
+        shap["variant"] = vname
     return pred, shap
 
 
+def load_asissued(city: str) -> pd.DataFrame | None:
+    """As-issued future drivers per reach (pipeline.asissued_weather output joined to
+    each reach's weather cell). None if that pipeline has not been built."""
+    path = PROCESSED_DIR / f"asissued_{city}.parquet"
+    if not path.exists():
+        return None
+    from sqlalchemy import text
+
+    from core.db import session_scope
+
+    cells = pd.read_parquet(path)
+    with session_scope() as session:
+        points = pd.read_sql(
+            text(
+                "SELECT q.reach_id, q.query_lat, q.query_lon FROM driver_query_points q "
+                "JOIN reaches r USING (reach_id) WHERE r.city = :c"
+            ),
+            session.connection(),
+            params={"c": city},
+        )
+    out = points.merge(cells, on=["query_lat", "query_lon"], how="inner")
+    return out.drop(columns=["query_lat", "query_lon"])
+
+
 def train_all(city: str) -> dict[str, Any]:
+    from pipeline.build_dataset import frame_meta_path
+
     fs, gs = FrameSettings.from_config(), GBMSettings.from_config()
     validate_settings(gs, fs)
     path = frame_path(city)
     frame = load_frame(city)
     categories = sorted(frame["reach_id"].astype(str).unique())
+    meta_path = frame_meta_path(city)
+    if gs.drop_when_proxy and not meta_path.exists():
+        raise FileNotFoundError(
+            f"{meta_path} missing: cannot tell whether {list(gs.drop_when_proxy)} are "
+            "land-cover proxies - rebuild the frame with pipeline.build_dataset"
+        )
+    static_flags = (
+        json.loads(meta_path.read_text(encoding="utf-8"))["static_flags"]
+        if meta_path.exists()
+        else {}
+    )
+    dropped = proxy_dropped_features(gs, static_flags)
+    asissued = load_asissued(city)
     run: dict[str, Any] = {
         "city": city,
         "frame": str(path.relative_to(REPO_ROOT)),
         "frame_sha256": file_sha256(path),
         "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "dropped_features": dropped,
+        "variants": {k: v.as_dict() for k, v in gs.variants.items()},
+        "asissued_rows": 0 if asissued is None else len(asissued),
         "fits": {},
     }
-    evals, shaps = [], []
+    if asissued is None:
+        log.warning("gbm.no_asissued", note="as-issued weather not built - ORACLE only")
+    evals, shaps, latests = [], [], []
     with stage(log, "baseline_gbm", city=city) as counters:
-        for fold in walk_forward(frame, fs):
-            name = f"wf-{fold['name']}"
-            model = fit(
-                fold["train"],
+        for vname, variant in gs.variants.items():
+            for fold in walk_forward(frame, fs):
+                name = f"{vname}.wf-{fold['name']}"
+                model = fit(
+                    fold["train"],
+                    fs,
+                    gs,
+                    city=city,
+                    fit_name=name,
+                    train_end=fold["train_end"],
+                    categories=categories,
+                    variant=variant,
+                    dropped=dropped,
+                )
+                save(model)
+                pred, shap = forecast_and_explain(model, fold["eval"], require_target=True)
+                if pred.empty:
+                    log.error("gbm.no_eval_targets", fold=name, note="evaluate will refuse")
+                else:
+                    pred["fold"] = fold["name"]
+                    shap["fold"] = fold["name"]
+                    evals.append(pred)
+                    shaps.append(shap)
+                n_asissued = 0
+                if asissued is not None:
+                    pa, _ = forecast_and_explain(
+                        model, fold["eval"], require_target=True, asissued=asissued, explain=False
+                    )
+                    if not pa.empty:
+                        pa["fold"] = fold["name"]
+                        evals.append(pa)
+                        n_asissued = len(pa)
+                run["fits"][name] = {
+                    "version": model.version,
+                    "variant": vname,
+                    "train_end": str(fold["train_end"]),
+                    "eval_forecasts": len(pred),
+                    "eval_forecasts_asissued": n_asissued,
+                    "quantiles_crossed": int(pred["quantiles_crossed"].sum()) if len(pred) else 0,
+                }
+
+            last = pd.to_datetime(frame["date"]).max().date()
+            pname = f"{vname}.{PRODUCTION}"
+            prod = fit(
+                embargo(frame, last, fs),
                 fs,
                 gs,
                 city=city,
-                fit_name=name,
-                train_end=fold["train_end"],
+                fit_name=pname,
+                train_end=last,
                 categories=categories,
+                variant=variant,
+                dropped=dropped,
             )
-            save(model)
-            pred, shap = forecast_and_explain(model, fold["eval"], require_target=True)
-            if pred.empty:
-                log.error(
-                    "gbm.no_eval_targets",
-                    fold=name,
-                    note="evaluation fold has no OK observations - evaluate will refuse",
-                )
-            else:
-                pred["fold"] = fold["name"]
-                shap["fold"] = fold["name"]
-                evals.append(pred)
-                shaps.append(shap)
-            run["fits"][name] = {
-                "version": model.version,
-                "train_end": str(fold["train_end"]),
-                "eval_forecasts": len(pred),
-                "quantiles_crossed": int(pred["quantiles_crossed"].sum()) if len(pred) else 0,
+            save(prod)
+            latest_rows = frame[pd.to_datetime(frame["date"]).dt.date == last]
+            latest, latest_shap = forecast_and_explain(prod, latest_rows, require_target=False)
+            latest_shap["fold"] = PRODUCTION
+            shaps.append(latest_shap)
+            latests.append(latest)
+            run["fits"][pname] = {
+                "version": prod.version,
+                "variant": vname,
+                "train_end": str(last),
+                "latest_issue_date": str(last),
+                "latest_forecasts": len(latest),
+                "latest_with_missing_future_drivers": int(
+                    (latest["future_drivers_missing"] > 0).sum()
+                ),
             }
-
-        last = pd.to_datetime(frame["date"]).max().date()
-        prod = fit(
-            embargo(frame, last, fs),
-            fs,
-            gs,
-            city=city,
-            fit_name=PRODUCTION,
-            train_end=last,
-            categories=categories,
-        )
-        save(prod)
-        latest_rows = frame[pd.to_datetime(frame["date"]).dt.date == last]
-        latest, latest_shap = forecast_and_explain(prod, latest_rows, require_target=False)
-        latest_shap["fold"] = PRODUCTION
-        shaps.append(latest_shap)
-        run["fits"][PRODUCTION] = {
-            "version": prod.version,
-            "train_end": str(last),
-            "latest_issue_date": str(last),
-            "latest_forecasts": len(latest),
-            "latest_with_missing_future_drivers": int((latest["future_drivers_missing"] > 0).sum()),
-        }
 
         PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
         ev = pd.concat(evals, ignore_index=True) if evals else pd.DataFrame()
+        latest_all = pd.concat(latests, ignore_index=True)
         ev.to_parquet(PROCESSED_DIR / f"gbm_eval_{city}.parquet", index=False)
-        latest.to_parquet(PROCESSED_DIR / f"gbm_latest_{city}.parquet", index=False)
+        latest_all.to_parquet(PROCESSED_DIR / f"gbm_latest_{city}.parquet", index=False)
         pd.concat(shaps, ignore_index=True).to_parquet(
             PROCESSED_DIR / f"gbm_shap_{city}.parquet", index=False
         )
         (PROCESSED_DIR / f"gbm_run_{city}.json").write_text(json.dumps(run, indent=2))
         counters.record(
             rows_in=len(frame),
-            rows_out=len(ev) + len(latest),
+            rows_out=len(ev) + len(latest_all),
             eval_forecasts=len(ev),
-            latest_forecasts=len(latest),
+            latest_forecasts=len(latest_all),
+            dropped_features=dropped,
         )
     return run
 
