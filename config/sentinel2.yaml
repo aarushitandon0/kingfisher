@@ -1,0 +1,71 @@
+# Sentinel-2 L1 retrieval parameters (pipeline/l1_satellite.py).
+#
+# Everything here is compiled INTO the evalscript, and the evalscript hash is part of
+# every Statistical API cache key. Changing a number below therefore re-requests every
+# (reach, year) chunk and re-spends processing units. Change deliberately.
+
+collection: sentinel-2-l2a
+resolution_m: 10
+
+# Bands requested per acquisition. B02 is not used by any stored index; its water-pixel
+# mean is kept in the interim parquet as a QA reflectance.
+bands: [B02, B03, B04, B05, B08, B11, SCL]
+
+# Scene classification (SCL) classes.
+scl:
+  cloud: [3, 8, 9, 10]         # cloud shadow, cloud medium/high probability, thin cirrus
+  invalid: [0, 1]              # no data, saturated/defective
+  water: 6
+
+geometry:
+  # Water indices: centreline buffered 15 m each side (a 30 m corridor). This is the
+  # SAME corridor the Day-1 observability gate measured, so water_pixel_count here and
+  # reaches.observable describe the same ground.
+  water_half_width_m: 15
+  # Riparian NDVI: centreline buffered 30 m each side, water pixels excluded per pixel
+  # (MNDWI > 0 OR SCL = WATER), cloud/shadow excluded.
+  riparian_half_width_m: 30
+
+# Nechad-type single-band turbidity: T = A * rho / (1 - rho / C), rho = B04 reflectance.
+#
+# Algorithm: Nechad, B., Ruddick, K. G. & Neukermans, G. (2009). Calibration and
+#   validation of a generic multisensor algorithm for mapping of turbidity in coastal
+#   waters. Proc. SPIE 7473, 74730H. doi:10.1117/12.830700
+# Coefficients (red band): Dogliotti, A. I., Ruddick, K. G., Nechad, B., Doxaran, D. &
+#   Knaeps, E. (2015). A single algorithm to retrieve turbidity from remotely-sensed data
+#   in all coastal and estuarine waters. Remote Sensing of Environment 156, 157-168.
+#   doi:10.1016/j.rse.2014.09.020
+#
+# CAVEATS - why this is a PROXY and not FNU:
+#   * the coefficients were calibrated at 645 nm; S2 B04 is centred at 665 nm
+#   * the algorithm expects water-leaving reflectance; L2A is Sen2Cor BOA reflectance,
+#     an atmospheric correction designed for land, not water
+#   * narrow urban channels are mixed pixels (MASTERSPEC 6.1)
+# Verify A and C against Dogliotti et al. (2015) Table 2 before quoting any value.
+nechad:
+  A: 228.1
+  C: 0.1641
+  # Above this fraction of C the denominator collapses and T diverges; such pixels are
+  # excluded from the turbidity mean and counted.
+  max_rho_fraction_of_C: 0.9
+
+quality:
+  # Per-acquisition rules. min_water_pixels and max_cloud_fraction are read from the
+  # city config's `observability` block, so the per-date rule and the per-reach gate
+  # cannot drift apart.
+  #
+  # A date is OUT_OF_RANGE when fewer than this fraction of its water pixels have a
+  # valid (non-diverging) Nechad value, or when any mean index leaves its physical domain.
+  min_turbidity_valid_fraction: 0.5
+  riparian_min_pixels: 10
+
+requests:
+  # One request per (reach, calendar year): a completed year is an immutable cache key
+  # and is never re-requested. The current year's chunk ends "today", so it is
+  # re-requested once per day that the pipeline runs.
+  chunk: year
+  batch_size: 16
+  max_threads: 4
+  max_attempts: 6
+  backoff_base_s: 2.0
+  backoff_max_s: 120.0

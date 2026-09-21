@@ -37,6 +37,15 @@ satellite:
 
 weather:
   archive_start: 2016-01-01
+  # Days fetched BEFORE archive_start so api_30 and antecedent_dry_days are fully
+  # defined from archive_start onward. A Portuguese summer dry spell can run 100+ days.
+  spinup_days: 365
+  # Catchment centroids are snapped to this grid before querying. Open-Meteo's archive
+  # is ERA5-Land (0.1 deg) / ERA5 (0.25 deg): points inside one cell get one cell's
+  # weather anyway, and querying every centroid separately would cost ~35x the daily
+  # Open-Meteo call quota for no extra information.
+  query_grid_deg: 0.1
+  forecast_days: 10
   variables:
     - precipitation
     - temperature_2m
@@ -47,8 +56,20 @@ weather:
 
 static_attributes:
   land_cover_adapter: worldcover    # CLMS is EU-only; ESA WorldCover 10m instead
+  land_cover_fallback: null
+  # Imperviousness / land cover layer year closest to this is used.
+  reference_year: 2021
   population_source: ghsl
   alan_source: viirs
+  # OSM highway classes counted in road_density_km_km2. Motorised classes only: the
+  # attribute is a traffic-derived pollutant-load proxy, and footways, paths and tracks
+  # carry no traffic. Change here, not in code.
+  road_classes: [motorway, motorway_link, trunk, trunk_link, primary, primary_link,
+                 secondary, secondary_link, tertiary, tertiary_link, unclassified,
+                 residential, living_street, service]
+  # WorldCover riparian width: vegetated share of a corridor this wide either side of
+  # every channel in the catchment, expressed in metres.
+  riparian_corridor_m: 100
 
 ground_truth:
   source: cpcb

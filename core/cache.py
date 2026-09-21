@@ -85,9 +85,7 @@ class DiskCache:
             return None
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         payload = json.loads(body_path.read_text(encoding="utf-8"))
-        return CacheEntry(
-            payload=payload, path=body_path, hit=True, fetched_at=meta["fetched_at"]
-        )
+        return CacheEntry(payload=payload, path=body_path, hit=True, fetched_at=meta["fetched_at"])
 
     def put(
         self,
@@ -97,7 +95,14 @@ class DiskCache:
         slug: str = "",
         url: str = "",
         source: str = "",
+        extra_meta: Mapping[str, Any] | None = None,
     ) -> CacheEntry:
+        """Write the body verbatim plus a meta sidecar.
+
+        `extra_meta` carries facts about the fetch that are not part of the request -
+        e.g. the processing units a Sentinel Hub response cost, read from its headers -
+        so the cache directory doubles as the spend ledger.
+        """
         body_path, meta_path = self.paths_for(params, slug)
         body = json.dumps(payload, separators=(",", ":"), default=str)
         body_path.write_text(body, encoding="utf-8")
@@ -112,6 +117,7 @@ class DiskCache:
                     "fetched_at": fetched_at,
                     "bytes": len(body),
                     "key": cache_key(params),
+                    **dict(extra_meta or {}),
                 },
                 indent=2,
                 sort_keys=True,
@@ -120,6 +126,17 @@ class DiskCache:
             encoding="utf-8",
         )
         return CacheEntry(payload=payload, path=body_path, hit=False, fetched_at=fetched_at)
+
+    def read_meta(self, params: Mapping[str, Any], slug: str = "") -> dict[str, Any] | None:
+        _, meta_path = self.paths_for(params, slug)
+        if not meta_path.exists():
+            return None
+        meta: dict[str, Any] = json.loads(meta_path.read_text(encoding="utf-8"))
+        return meta
+
+    def iter_meta(self, pattern: str = "*.meta.json") -> list[dict[str, Any]]:
+        """Every meta sidecar in this namespace (used to total spend across runs)."""
+        return [json.loads(path.read_text(encoding="utf-8")) for path in self.root.glob(pattern)]
 
     def get_or_fetch(
         self,

@@ -42,6 +42,7 @@ dependencies = [
   # --- Modelling ---
   "numpy>=1.26",
   "pandas>=2.2",
+  "pyarrow>=17",          # parquet: data/interim/s2_*.parquet, data/processed/ frames
   "scikit-learn>=1.5",
   "lightgbm>=4.5",
   "torch>=2.4",

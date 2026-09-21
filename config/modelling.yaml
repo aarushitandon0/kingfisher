@@ -1,0 +1,44 @@
+# Feature definitions and walk-forward splits. Read by pipeline/l2_drivers.py and
+# pipeline/build_dataset.py. The leakage tests assert against these values.
+
+features:
+  # api_k(t) = sum_{i=1..k} precip(t-i) * lambda^i       (Kohler & Linsley antecedent
+  # precipitation index). Antecedent: today's rain is NOT in it - it is in precip_mm and
+  # precip_max_hourly. Any missing day in the window makes api_k NULL, never a zero.
+  api_lambda: 0.9
+  api_windows: [7, 14, 30]
+  # A day is dry when precip_mm < this.
+  dry_day_threshold_mm: 1.0
+  # precip_duration_h counts hours with precip > this.
+  duration_threshold_mm: 0.5
+  # upstream_state_lag1 uses the upstream reach's latest OK observation at or before
+  # t-1, if it is no older than this. Older -> NULL with NO_RECENT_UPSTREAM_OBS.
+  upstream_max_age_days: 5
+
+splits:
+  # Walk-forward, by issue date. No shuffling. A row belongs to the fold its issue date
+  # falls in; any target or future-driver column that reaches past the fold's end is
+  # masked to NULL (embargo), so no fold's rows carry information from a later fold.
+  train_end: 2023-12-31
+  val_start: 2024-01-01
+  val_end: 2024-12-31
+  test_start: 2025-01-01
+  test_end: null            # null = the last archive date available
+
+targets:
+  variables: [turbidity_proxy, ndci]
+  horizons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+frame:
+  # Last OK observation at or before the issue date, carried as a LABELLED as-of value
+  # with its age in days. Older than this -> NULL.
+  asof_max_age_days: 60
+  # Driver columns shifted forward to each horizon's target date. In training these come
+  # from the archive (perfect-prognosis); live, from the Open-Meteo forecast. Report the
+  # difference - archive weather is better than any forecast.
+  future_driver_columns:
+    - precip_mm
+    - precip_max_hourly
+    - first_flush_index
+    - api_7
+    - temp_mean_c

@@ -17,6 +17,8 @@ caller's job (pipeline/l2_drivers.py).
 
 from __future__ import annotations
 
+import random
+import time
 from datetime import date
 from typing import Any
 
@@ -40,6 +42,9 @@ HOURLY_VARIABLES = [
 ]
 
 TIMEOUT_S = 120
+MAX_ATTEMPTS = 6
+BACKOFF_BASE_S = 5.0
+BACKOFF_MAX_S = 120.0
 _cache = DiskCache("weather")
 
 
@@ -47,11 +52,41 @@ class OpenMeteoError(RuntimeError):
     """Raised when Open-Meteo fails or returns nothing usable. We fail loudly."""
 
 
+def _get(url: str, params: dict[str, Any]) -> requests.Response:
+    """GET with exponential backoff on 429 / 5xx / connection errors.
+
+    Open-Meteo's minutely and hourly limits clear by waiting; the DAILY limit does not,
+    so a 429 that says "daily" is raised at once rather than slept on.
+    """
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response = requests.get(url, params=params, timeout=TIMEOUT_S)
+        except requests.RequestException as exc:
+            if attempt == MAX_ATTEMPTS:
+                raise OpenMeteoError(f"Open-Meteo request to {url} failed: {exc}") from exc
+            error = f"{type(exc).__name__}: {exc}"
+        else:
+            retryable = response.status_code == 429 or response.status_code >= 500
+            if not retryable:
+                return response
+            if response.status_code == 429 and "daily" in response.text.lower():
+                raise OpenMeteoError(
+                    f"Open-Meteo daily request limit reached: {response.text[:300]}. "
+                    "Cached responses are kept; re-run tomorrow to continue."
+                )
+            if attempt == MAX_ATTEMPTS:
+                return response
+            error = f"HTTP {response.status_code}: {response.text[:200]}"
+        wait = min(BACKOFF_MAX_S, BACKOFF_BASE_S * 2 ** (attempt - 1)) * (
+            1 + 0.25 * random.random()
+        )
+        log.warning("openmeteo.retry", url=url, attempt=attempt, wait_s=round(wait, 1), error=error)
+        time.sleep(wait)
+    raise AssertionError("unreachable")
+
+
 def _request(url: str, params: dict[str, Any]) -> dict[str, Any]:
-    try:
-        response = requests.get(url, params=params, timeout=TIMEOUT_S)
-    except requests.RequestException as exc:
-        raise OpenMeteoError(f"Open-Meteo request to {url} failed: {exc}") from exc
+    response = _get(url, params)
 
     if response.status_code != 200:
         # Open-Meteo returns a JSON body with `reason` on 4xx.
@@ -119,9 +154,13 @@ def fetch_forecast(
     variables: list[str] | None = None,
     *,
     issued: date | str | None = None,
+    past_days: int = 0,
     refresh: bool = False,
 ) -> tuple[dict[str, Any], bool]:
     """Hourly forecast for the live path. Returns (payload, cache_hit).
+
+    `past_days` (<= 92) prepends recent days from the forecast model, which is how the
+    live series bridges the few days the archive has not caught up on yet.
 
     The cache key carries the issue date: a forecast fetched today is a different
     object from the same horizon fetched tomorrow, and conflating them would be a
@@ -136,6 +175,7 @@ def fetch_forecast(
         "start": issued_s,
         "end": f"{issued_s}+{days}d",
         "variables_hash": hash_variables(variables),
+        **({"past_days": past_days} if past_days else {}),
     }
     params = {
         "latitude": lat,
@@ -143,11 +183,15 @@ def fetch_forecast(
         "hourly": ",".join(variables),
         "forecast_days": days,
         "timezone": "UTC",
+        **({"past_days": past_days} if past_days else {}),
     }
     entry = _cache.get_or_fetch(
         key,
         lambda: _request(FORECAST_URL, params),
-        slug=f"forecast_{lat:.4f}_{lon:.4f}_{issued_s}_{days}d_{hash_variables(variables)}",
+        slug=(
+            f"forecast_{lat:.4f}_{lon:.4f}_{issued_s}_{days}d"
+            f"{f'_p{past_days}' if past_days else ''}_{hash_variables(variables)}"
+        ),
         url=FORECAST_URL,
         source="Open-Meteo forecast, CC-BY-4.0",
         refresh=refresh,

@@ -2,7 +2,7 @@
 # Requires: docker compose, and a Python 3.11 env with `pip install -e ".[dev]"`.
 
 .DEFAULT_GOAL := help
-.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability db-up db-down db-migrate db-revision test lint format api
+.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l2 static dataset db-up db-down db-migrate db-revision test lint format api
 
 PY ?= python
 
@@ -31,6 +31,21 @@ l0: db-migrate  ## L0 backbone: OSM -> reaches -> catchments -> PostGIS + GeoJSO
 
 observability:  ## GATE: how many reaches Sentinel-2 can actually see (Day 1)
 	$(PY) scripts/check_observability.py --city $(or $(city),coimbra)
+
+l1-estimate:  ## L1: print the Sentinel Hub PU plan for a full run (spends nothing)
+	$(PY) -m pipeline.l1_satellite --city $(or $(city),coimbra) --estimate
+
+l1:  ## L1: Sentinel-2 observations (make l1 max_pu=5000; observable reaches first)
+	$(PY) -m pipeline.l1_satellite --city $(or $(city),coimbra) $(if $(max_pu),--max-pu $(max_pu),)
+
+l2:  ## L2: Open-Meteo drivers at catchment centroids (run after l1 for upstream state)
+	$(PY) -m pipeline.l2_drivers --city $(or $(city),coimbra)
+
+static:  ## L2: static catchment attributes (land-cover adapter chain)
+	$(PY) -m pipeline.l2_static --city $(or $(city),coimbra)
+
+dataset:  ## Modelling frame + walk-forward splits + data summary
+	$(PY) -m pipeline.build_dataset --city $(or $(city),coimbra)
 
 db-up:  ## Start PostGIS and wait until it is accepting connections
 	docker compose up -d db
