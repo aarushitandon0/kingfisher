@@ -119,6 +119,32 @@ with stage(log, "l1_satellite", city="coimbra") as s:
 
 Scenario outputs are planning estimates, not predictions, and not causal claims.
 
+## Head-to-head and the production gate (P5.4)
+
+Decided on the 2024 validation fold before the test fold was scored (`results/gate.json`,
+`results/head_to_head.json`). All numbers are **hindcast with observed weather - upper
+bound on live skill**. Both models are assimilated and conformally calibrated identically.
+
+| Validation CRPS (lower is better) | ealstm+assim | lightgbm+assim | winner |
+|---|---:|---:|---|
+| NDCI, 1-3 d | 0.0630 | 0.0625 | LightGBM |
+| NDCI, 4-7 d | 0.0652 | 0.0668 | EA-LSTM |
+| NDCI, 8-10 d | 0.0679 | 0.0701 | EA-LSTM |
+| Turbidity index, 1-3 d | 5.039 | 4.603 | LightGBM |
+| Turbidity index, 4-7 d | 4.844 | 4.684 | LightGBM |
+| Turbidity index, 8-10 d | 4.833 | 4.817 | LightGBM |
+
+**LightGBM stays production.** The EA-LSTM needed to win 2 of 3 buckets for both targets
+with coverage no worse; it won 2 of 3 for NDCI (and missed the coverage test by 0.00006,
+which is noise) and 0 of 3 for turbidity, so it fails on turbidity regardless. On the
+spatial-holdout reaches (never seen by the EA-LSTM) it is also worse on validation
+(turbidity CRPS 5.26 vs 4.93; 80% coverage 0.76 vs 0.81), although LightGBM variant A was
+trained on those reaches and the comparison is not like-for-like. On test, LightGBM has one
+more year of training data than the EA-LSTM (trained on 2016-2023 only). The EA-LSTM has
+only 6 usable static attributes to tell reaches apart (3 of 9 were dropped: mostly empty
+or a land-cover proxy), which limits it. Assimilation helps the EA-LSTM (CRPS 5.14 to 4.94
+on turbidity) and does nothing for LightGBM.
+
 ## Scenario sensitivity check (P5.4)
 
 The scenario engine perturbs catchment attributes and re-runs the model, so the model's
@@ -129,18 +155,20 @@ month in 2024, and compare (`make h2h`, `results/head_to_head.json` →
 
 | Model | Target | Reaches up | Reaches down | No change | Median change |
 |-------|--------|-----------:|-------------:|----------:|--------------:|
-| LightGBM B (no reach identity, used for scenarios) | turbidity index | 26% | **63%** | 11% | −0.09 (−1.2%) |
-| LightGBM A (production) | turbidity index | 7% | **74%** | 19% | −0.10 (−1.0%) |
-| EA-LSTM | turbidity index | pending - not yet trained | | | |
+| LightGBM B (no reach identity, used for scenarios) | turbidity index | 25% | **62%** | 13% | -0.11 (-1.5%) |
+| LightGBM A (production) | turbidity index | 8% | **75%** | 17% | -0.08 (-0.8%) |
+| EA-LSTM (5-seed ensemble) | turbidity index | 36% | **64%** | 0% | -0.02 (-0.3%) |
 
-**LightGBM moves the wrong way on most reaches.** Adding impervious cover lowers its
-turbidity forecast on 63% (B) and 74% (A) of the 353 reaches, by about 1%. The model has
+**Both models move the wrong way on most reaches.** Adding impervious cover lowers the
+turbidity forecast on 62% (LightGBM B), 75% (LightGBM A) and 64% (EA-LSTM) of the 353
+reaches, by about 1% or less. The EA-LSTM is closer to flat than LightGBM but still points
+the wrong way. The model has
 learned a between-reach association, not the physical response. Only 41-51 observable
 reaches carry targets, most of them on the main river (37 of the 41 training reaches are
 Strahler order 4-5; mean catchment ~1,500 km²) with mostly low imperviousness (mean 8.6%,
 range 3-51% across the training reaches), so imperviousness is confounded
-with everything else that differs between those reaches. Until a model passes this check,
-LightGBM re-inference must not be used to size the imperviousness effect of an
+with everything else that differs between those reaches. Neither model passes this check, so
+model re-inference must not be used to size the imperviousness effect of an
 intervention. Scenario effect sizes come from `config/intervention_coefficients.yaml`
 (cited literature), as the design requires, and not from the model.
 

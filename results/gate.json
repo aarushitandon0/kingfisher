@@ -1,9 +1,121 @@
 {
-  "production": "lightgbm",
+  "rule": "ealstm+assim beats lightgbm+assim on validation CRPS in >= 2 of 3 buckets for every target, with |coverage_80 - 0.80| no worse (+0.0)",
   "decided_on": "val",
-  "rule": "not decided",
-  "reason": "EA-LSTM not trained / no hindcast: gate NOT decided, LightGBM stays production",
-  "decided": false,
-  "decided_at": "2026-09-21T11:11:10+00:00",
-  "test_evaluations": 0
+  "per_variable": {
+    "ndci": {
+      "crps": {
+        "h01_03": {
+          "challenger": 0.063017,
+          "incumbent": 0.06253,
+          "challenger_wins": false
+        },
+        "h04_07": {
+          "challenger": 0.065182,
+          "incumbent": 0.066763,
+          "challenger_wins": true
+        },
+        "h08_10": {
+          "challenger": 0.067856,
+          "incumbent": 0.070146,
+          "challenger_wins": true
+        }
+      },
+      "buckets_won": 2,
+      "coverage_80": {
+        "challenger": 0.800317,
+        "incumbent": 0.800254
+      },
+      "coverage_no_worse": false,
+      "passed": false
+    },
+    "turbidity_proxy": {
+      "crps": {
+        "h01_03": {
+          "challenger": 5.039007,
+          "incumbent": 4.602708,
+          "challenger_wins": false
+        },
+        "h04_07": {
+          "challenger": 4.843635,
+          "incumbent": 4.683505,
+          "challenger_wins": false
+        },
+        "h08_10": {
+          "challenger": 4.83311,
+          "incumbent": 4.81739,
+          "challenger_wins": false
+        }
+      },
+      "buckets_won": 0,
+      "coverage_80": {
+        "challenger": 0.80038,
+        "incumbent": 0.80019
+      },
+      "coverage_no_worse": false,
+      "passed": false
+    }
+  },
+  "production": "lightgbm",
+  "unassimilated_comparison": {
+    "rule": "ealstm beats lightgbm on validation CRPS in >= 2 of 3 buckets for every target, with |coverage_80 - 0.80| no worse (+0.0)",
+    "decided_on": "val",
+    "per_variable": {
+      "ndci": {
+        "crps": {
+          "h01_03": {
+            "challenger": 0.070579,
+            "incumbent": 0.063017,
+            "challenger_wins": false
+          },
+          "h04_07": {
+            "challenger": 0.070603,
+            "incumbent": 0.067256,
+            "challenger_wins": false
+          },
+          "h08_10": {
+            "challenger": 0.070705,
+            "incumbent": 0.07013,
+            "challenger_wins": false
+          }
+        },
+        "buckets_won": 0,
+        "coverage_80": {
+          "challenger": 0.800444,
+          "incumbent": 0.800254
+        },
+        "coverage_no_worse": false,
+        "passed": false
+      },
+      "turbidity_proxy": {
+        "crps": {
+          "h01_03": {
+            "challenger": 5.123602,
+            "incumbent": 4.599364,
+            "challenger_wins": false
+          },
+          "h04_07": {
+            "challenger": 5.124023,
+            "incumbent": 4.683516,
+            "challenger_wins": false
+          },
+          "h08_10": {
+            "challenger": 5.111354,
+            "incumbent": 4.81739,
+            "challenger_wins": false
+          }
+        },
+        "buckets_won": 0,
+        "coverage_80": {
+          "challenger": 0.800507,
+          "incumbent": 0.80019
+        },
+        "coverage_no_worse": false,
+        "passed": false
+      }
+    },
+    "production": "lightgbm"
+  },
+  "decided": true,
+  "decided_at": "2026-09-21T13:39:17+00:00",
+  "test_evaluations": 1
 }

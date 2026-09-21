@@ -14,16 +14,26 @@ KINGFISHER P5.4 - HEAD-TO-HEAD (calibrated; hindcast with observed weather - upp
   climatology     h04_07               6208   0.0802   0.1099   0.1629   0.800  0.0891
   climatology     h08_10               4643   0.0803   0.1100   0.1631   0.801  0.0890
   climatology     spatial_holdout      3030   0.0825   0.1132   0.1730   0.845  0.0962
-  lightgbm        all                 15770   0.0668   0.0914   0.1427   0.800  0.0772
-  lightgbm        h01_03               4737   0.0627   0.0868   0.1363   0.800  0.0733
-  lightgbm        h04_07               6312   0.0673   0.0917   0.1431   0.800  0.0777
-  lightgbm        h08_10               4721   0.0700   0.0956   0.1485   0.800  0.0803
-  lightgbm        spatial_holdout      3040   0.0779   0.1070   0.1710   0.801  0.0912
-  lightgbm+assim  all                 15770   0.0664   0.0910   0.1416   0.800  0.0769
-  lightgbm+assim  h01_03               4737   0.0623   0.0861   0.1342   0.800  0.0725
-  lightgbm+assim  h04_07               6312   0.0668   0.0911   0.1417   0.800  0.0778
-  lightgbm+assim  h08_10               4721   0.0700   0.0956   0.1485   0.800  0.0802
-  lightgbm+assim  spatial_holdout      3040   0.0775   0.1062   0.1696   0.800  0.0915
+  lightgbm        all                 15770   0.0668   0.0912   0.1425   0.800  0.0770
+  lightgbm        h01_03               4737   0.0630   0.0869   0.1362   0.800  0.0732
+  lightgbm        h04_07               6312   0.0673   0.0912   0.1425   0.800  0.0775
+  lightgbm        h08_10               4721   0.0701   0.0955   0.1483   0.800  0.0802
+  lightgbm        spatial_holdout      3040   0.0779   0.1067   0.1707   0.804  0.0907
+  lightgbm+assim  all                 15770   0.0665   0.0908   0.1413   0.800  0.0769
+  lightgbm+assim  h01_03               4737   0.0625   0.0861   0.1341   0.800  0.0729
+  lightgbm+assim  h04_07               6312   0.0668   0.0906   0.1412   0.800  0.0775
+  lightgbm+assim  h08_10               4721   0.0701   0.0955   0.1484   0.800  0.0800
+  lightgbm+assim  spatial_holdout      3040   0.0776   0.1060   0.1694   0.802  0.0912
+  ealstm          all                 15770   0.0706   0.0942   0.1562   0.800  0.0789
+  ealstm          h01_03               4737   0.0706   0.0942   0.1561   0.801  0.0788
+  ealstm          h04_07               6312   0.0706   0.0942   0.1561   0.800  0.0789
+  ealstm          h08_10               4721   0.0707   0.0943   0.1563   0.800  0.0788
+  ealstm          spatial_holdout      3040   0.0872   0.1140   0.1937   0.747  0.0886
+  ealstm+assim    all                 15770   0.0653   0.0861   0.1452   0.800  0.0740
+  ealstm+assim    h01_03               4737   0.0630   0.0830   0.1397   0.800  0.0703
+  ealstm+assim    h04_07               6312   0.0652   0.0859   0.1448   0.800  0.0740
+  ealstm+assim    h08_10               4721   0.0679   0.0895   0.1508   0.800  0.0776
+  ealstm+assim    spatial_holdout      3040   0.0798   0.1037   0.1801   0.753  0.0887
 
   VAL  |  turbidity_proxy
   model           scope                   n     CRPS      MAE     RMSE   cov80   Brier
@@ -37,16 +47,26 @@ KINGFISHER P5.4 - HEAD-TO-HEAD (calibrated; hindcast with observed weather - upp
   climatology     h04_07               6208   5.3041   7.0616  15.2032   0.800  0.0761
   climatology     h08_10               4643   5.2919   7.0471  15.1909   0.801  0.0756
   climatology     spatial_holdout      3030   5.2803   7.0584  18.4516   0.782  0.0639
-  lightgbm        all                 15770   4.6734   6.0930  14.4595   0.800  0.0706
-  lightgbm        h01_03               4737   4.5950   5.9844  14.4969   0.800  0.0702
-  lightgbm        h04_07               6312   4.6500   6.0972  14.4214   0.800  0.0703
-  lightgbm        h08_10               4721   4.7834   6.1963  14.4727   0.800  0.0715
-  lightgbm        spatial_holdout      3040   4.8901   6.2060  18.4314   0.810  0.0580
-  lightgbm+assim  all                 15770   4.6744   6.0943  14.4610   0.800  0.0706
-  lightgbm+assim  h01_03               4737   4.5983   5.9888  14.5018   0.800  0.0702
-  lightgbm+assim  h04_07               6312   4.6500   6.0972  14.4214   0.800  0.0703
-  lightgbm+assim  h08_10               4721   4.7834   6.1963  14.4727   0.800  0.0715
-  lightgbm+assim  spatial_holdout      3040   4.8907   6.2067  18.4321   0.810  0.0580
+  lightgbm        all                 15770   4.6983   6.1352  14.4564   0.800  0.0707
+  lightgbm        h01_03               4737   4.5994   5.9917  14.5082   0.800  0.0706
+  lightgbm        h04_07               6312   4.6835   6.1341  14.4142   0.800  0.0706
+  lightgbm        h08_10               4721   4.8174   6.2808  14.4607   0.800  0.0709
+  lightgbm        spatial_holdout      3040   4.9314   6.2554  18.4328   0.810  0.0579
+  lightgbm+assim  all                 15770   4.6993   6.1366  14.4580   0.800  0.0707
+  lightgbm+assim  h01_03               4737   4.6027   5.9963  14.5134   0.800  0.0706
+  lightgbm+assim  h04_07               6312   4.6835   6.1341  14.4142   0.800  0.0706
+  lightgbm+assim  h08_10               4721   4.8174   6.2808  14.4607   0.800  0.0709
+  lightgbm+assim  spatial_holdout      3040   4.9320   6.2561  18.4335   0.810  0.0579
+  ealstm          all                 15770   5.1201   6.4799  15.5427   0.801  0.0733
+  ealstm          h01_03               4737   5.1236   6.4871  15.5423   0.801  0.0735
+  ealstm          h04_07               6312   5.1240   6.4861  15.5458   0.800  0.0735
+  ealstm          h08_10               4721   5.1114   6.4644  15.5391   0.801  0.0730
+  ealstm          spatial_holdout      3040   5.2574   6.6577  18.7439   0.757  0.0613
+  ealstm+assim    all                 15770   4.8992   6.1829  15.4648   0.800  0.0707
+  ealstm+assim    h01_03               4737   5.0390   6.3538  15.9082   0.801  0.0710
+  ealstm+assim    h04_07               6312   4.8436   6.1174  15.2798   0.800  0.0704
+  ealstm+assim    h08_10               4721   4.8331   6.0990  15.2582   0.800  0.0708
+  ealstm+assim    spatial_holdout      3040   5.0589   6.4243  18.8334   0.771  0.0580
 
   TEST  |  ndci
   model           scope                   n     CRPS      MAE     RMSE   cov80   Brier
@@ -60,16 +80,26 @@ KINGFISHER P5.4 - HEAD-TO-HEAD (calibrated; hindcast with observed weather - upp
   climatology     h04_07              12838   0.0906   0.1245   0.1802   0.768  0.0749
   climatology     h08_10               9618   0.0905   0.1244   0.1801   0.768  0.0748
   climatology     spatial_holdout      6065   0.1028   0.1441   0.2051   0.775  0.0679
-  lightgbm        all                 32225   0.0752   0.1018   0.1596   0.769  0.0656
-  lightgbm        h01_03               9678   0.0737   0.1001   0.1584   0.762  0.0640
-  lightgbm        h04_07              12890   0.0754   0.1020   0.1596   0.769  0.0657
-  lightgbm        h08_10               9657   0.0766   0.1034   0.1607   0.777  0.0668
-  lightgbm        spatial_holdout      6065   0.0952   0.1289   0.1952   0.734  0.0641
+  lightgbm        all                 32225   0.0752   0.1017   0.1595   0.771  0.0656
+  lightgbm        h01_03               9678   0.0736   0.0998   0.1581   0.768  0.0640
+  lightgbm        h04_07              12890   0.0755   0.1021   0.1598   0.766  0.0659
+  lightgbm        h08_10               9657   0.0766   0.1032   0.1606   0.780  0.0669
+  lightgbm        spatial_holdout      6065   0.0953   0.1287   0.1952   0.738  0.0643
   lightgbm+assim  all                 32225   0.0754   0.1019   0.1587   0.765  0.0662
-  lightgbm+assim  h01_03               9678   0.0751   0.1017   0.1588   0.751  0.0661
-  lightgbm+assim  h04_07              12890   0.0749   0.1013   0.1578   0.765  0.0660
-  lightgbm+assim  h08_10               9657   0.0763   0.1030   0.1599   0.781  0.0665
-  lightgbm+assim  spatial_holdout      6065   0.0953   0.1287   0.1942   0.727  0.0649
+  lightgbm+assim  h01_03               9678   0.0751   0.1015   0.1587   0.755  0.0658
+  lightgbm+assim  h04_07              12890   0.0750   0.1014   0.1580   0.762  0.0663
+  lightgbm+assim  h08_10               9657   0.0762   0.1028   0.1598   0.781  0.0665
+  lightgbm+assim  spatial_holdout      6065   0.0954   0.1287   0.1943   0.730  0.0649
+  ealstm          all                 32225   0.0926   0.1250   0.1916   0.714  0.0816
+  ealstm          h01_03               9678   0.0926   0.1251   0.1915   0.714  0.0817
+  ealstm          h04_07              12890   0.0926   0.1250   0.1916   0.714  0.0816
+  ealstm          h08_10               9657   0.0926   0.1250   0.1916   0.714  0.0815
+  ealstm          spatial_holdout      6065   0.1187   0.1598   0.2372   0.641  0.0827
+  ealstm+assim    all                 32225   0.0790   0.1044   0.1653   0.757  0.0691
+  ealstm+assim    h01_03               9678   0.0784   0.1025   0.1634   0.752  0.0669
+  ealstm+assim    h04_07              12890   0.0781   0.1034   0.1635   0.760  0.0694
+  ealstm+assim    h08_10               9657   0.0807   0.1075   0.1695   0.758  0.0708
+  ealstm+assim    spatial_holdout      6065   0.1004   0.1332   0.2042   0.673  0.0699
 
   TEST  |  turbidity_proxy
   model           scope                   n     CRPS      MAE     RMSE   cov80   Brier
@@ -83,29 +113,44 @@ KINGFISHER P5.4 - HEAD-TO-HEAD (calibrated; hindcast with observed weather - upp
   climatology     h04_07              12838   6.3052   8.1141  17.3165   0.770  0.1012
   climatology     h08_10               9618   6.3040   8.1115  17.3223   0.770  0.1013
   climatology     spatial_holdout      6065   8.1243  10.3106  24.9124   0.759  0.1314
-  lightgbm        all                 32225   5.4241   6.9779  15.8502   0.757  0.0927
-  lightgbm        h01_03               9678   5.3451   6.8842  15.7870   0.760  0.0911
-  lightgbm        h04_07              12890   5.4448   7.0189  15.8880   0.745  0.0930
-  lightgbm        h08_10               9657   5.4756   7.0173  15.8628   0.771  0.0937
-  lightgbm        spatial_holdout      6065   7.4267   9.2728  23.9983   0.737  0.1219
-  lightgbm+assim  all                 32225   5.4241   6.9779  15.8505   0.758  0.0927
-  lightgbm+assim  h01_03               9678   5.3451   6.8838  15.7880   0.761  0.0911
-  lightgbm+assim  h04_07              12890   5.4448   7.0189  15.8880   0.745  0.0930
-  lightgbm+assim  h08_10               9657   5.4756   7.0173  15.8628   0.771  0.0937
-  lightgbm+assim  spatial_holdout      6065   7.4267   9.2730  23.9982   0.736  0.1219
+  lightgbm        all                 32225   5.4184   6.9793  15.8583   0.761  0.0927
+  lightgbm        h01_03               9678   5.3372   6.8727  15.7786   0.759  0.0920
+  lightgbm        h04_07              12890   5.4289   7.0151  15.8943   0.752  0.0926
+  lightgbm        h08_10               9657   5.4858   7.0383  15.8899   0.774  0.0935
+  lightgbm        spatial_holdout      6065   7.4198   9.2912  24.0238   0.733  0.1223
+  lightgbm+assim  all                 32225   5.4184   6.9792  15.8586   0.761  0.0927
+  lightgbm+assim  h01_03               9678   5.3373   6.8724  15.7795   0.759  0.0920
+  lightgbm+assim  h04_07              12890   5.4289   7.0151  15.8943   0.752  0.0926
+  lightgbm+assim  h08_10               9657   5.4858   7.0383  15.8899   0.774  0.0935
+  lightgbm+assim  spatial_holdout      6065   7.4199   9.2914  24.0237   0.733  0.1222
+  ealstm          all                 32225   6.1983   8.0746  17.1944   0.689  0.0988
+  ealstm          h01_03               9678   6.1947   8.0702  17.1856   0.689  0.0987
+  ealstm          h04_07              12890   6.1983   8.0746  17.1944   0.689  0.0988
+  ealstm          h08_10               9657   6.2019   8.0790  17.2032   0.689  0.0989
+  ealstm          spatial_holdout      6065   8.4260  10.4384  25.3581   0.604  0.1321
+  ealstm+assim    all                 32225   5.8016   7.4196  16.8325   0.730  0.0980
+  ealstm+assim    h01_03               9678   5.7823   7.3262  16.8518   0.744  0.0982
+  ealstm+assim    h04_07              12890   5.7927   7.4125  16.7792   0.727  0.0984
+  ealstm+assim    h08_10               9657   5.8329   7.5227  16.8841   0.721  0.0973
+  ealstm+assim    spatial_holdout      6065   8.1378  10.0760  24.7726   0.648  0.1315
 
 ==============================================================================================================
   GATE (decided on validation): production = LIGHTGBM
-  rule: not decided
-  test fold evaluated 0 time(s)
+  rule: ealstm+assim beats lightgbm+assim on validation CRPS in >= 2 of 3 buckets for every target, with |coverage_80 - 0.80| no worse (+0.0)
+   ndci: buckets won 2 | coverage no worse: False | FAIL
+   turbidity_proxy: buckets won 0 | coverage no worse: False | FAIL
+  test fold evaluated 1 time(s)
 
   SCENARIO SENSITIVITY: +10 points imperviousness_pct, every reach
-   LightGBM B.production turbidity_proxy  up 26%  down 63%  flat 11%  median change -0.0885 (-1.2%)
-   LightGBM B.production ndci             up 8%  down 80%  flat 11%  median change -0.0011 (-1.5%)
-   LightGBM A.production turbidity_proxy  up 7%  down 74%  flat 19%  median change -0.1018 (-1.0%)
-   LightGBM A.production ndci             up 0%  down 83%  flat 17%  median change -0.0014 (-6.7%)
-   !!! WRONG SIGN: LightGBM B.production lowers turbidity on 63% of reaches when imperviousness rises
-   !!! WRONG SIGN: LightGBM A.production lowers turbidity on 74% of reaches when imperviousness rises
+   LightGBM B.production turbidity_proxy  up 25%  down 62%  flat 13%  median change -0.1117 (-1.5%)
+   LightGBM B.production ndci             up 6%  down 82%  flat 11%  median change -0.0009 (-1.8%)
+   LightGBM A.production turbidity_proxy  up 8%  down 75%  flat 17%  median change -0.0751 (-0.8%)
+   LightGBM A.production ndci             up 14%  down 67%  flat 18%  median change -0.0013 (-6.1%)
+   EA-LSTM               turbidity_proxy  up 36%  down 64%  flat 0%  median change -0.0230 (-0.3%)
+   EA-LSTM               ndci             up 27%  down 73%  flat 0%  median change -0.0006 (-1.2%)
+   !!! WRONG SIGN: LightGBM B.production lowers turbidity on 62% of reaches when imperviousness rises
+   !!! WRONG SIGN: LightGBM A.production lowers turbidity on 75% of reaches when imperviousness rises
+   !!! WRONG SIGN: EA-LSTM lowers turbidity on 64% of reaches when imperviousness rises
 
   ATTRIBUTION SANITY: not computed: EA-LSTM is not production (SHAP from LightGBM is served)
 ==============================================================================================================

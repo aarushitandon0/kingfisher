@@ -1,6 +1,6 @@
 {
   "city": "coimbra",
-  "generated_at": "2026-09-21T11:16:48+00:00",
+  "generated_at": "2026-09-21T13:43:13+00:00",
   "production_model": "lightgbm",
   "pit_source": "LightGBM variant B, shortest horizon, quantile CDF (engine.probability)",
   "weather_label": "hindcast with observed weather - upper bound on live skill",
@@ -20,66 +20,66 @@
   "by_variable": {
     "ndci": {
       "reference": "PROXY: observations above the reach-season 95th percentile (not incidents)",
-      "detections": 175,
+      "detections": 173,
       "events": 272,
-      "precision": 0.811429,
-      "recall": 0.544118,
-      "f1": 0.651417,
+      "precision": 0.809249,
+      "recall": 0.536765,
+      "f1": 0.645426,
       "ci95": {
         "precision": [
-          0.741151,
-          0.86331
+          0.744818,
+          0.867347
         ],
         "recall": [
-          0.428029,
-          0.65984
+          0.422696,
+          0.649287
         ],
         "f1": [
-          0.552517,
-          0.732977
+          0.550707,
+          0.724772
         ]
       },
       "labels": {
-        "NORMAL": 4353,
-        "WEATHER_EXPLAINED": 277,
-        "UNEXPLAINED": 175
+        "NORMAL": 4351,
+        "WEATHER_EXPLAINED": 281,
+        "UNEXPLAINED": 173
       },
       "localised": {
-        "False": 73,
-        "True": 54,
-        "None": 48
+        "False": 71,
+        "True": 55,
+        "None": 47
       }
     },
     "turbidity_proxy": {
       "reference": "PROXY: observations above the reach-season 95th percentile (not incidents)",
       "detections": 250,
       "events": 336,
-      "precision": 0.84,
-      "recall": 0.627976,
-      "f1": 0.718677,
+      "precision": 0.872,
+      "recall": 0.657738,
+      "f1": 0.749864,
       "ci95": {
         "precision": [
-          0.792856,
-          0.891216
+          0.832652,
+          0.91358
         ],
         "recall": [
-          0.568436,
-          0.690847
+          0.601867,
+          0.713837
         ],
         "f1": [
-          0.673093,
-          0.765348
+          0.708759,
+          0.789807
         ]
       },
       "labels": {
-        "NORMAL": 4284,
-        "WEATHER_EXPLAINED": 271,
+        "NORMAL": 4290,
+        "WEATHER_EXPLAINED": 265,
         "UNEXPLAINED": 250
       },
       "localised": {
-        "False": 101,
-        "None": 84,
-        "True": 65
+        "False": 108,
+        "None": 82,
+        "True": 60
       }
     }
   }

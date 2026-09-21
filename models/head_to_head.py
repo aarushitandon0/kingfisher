@@ -334,30 +334,23 @@ def sensitivity_lightgbm(city: str, fs: Any, delta: float) -> dict[str, Any]:
 
 def sensitivity_ealstm(fs: Any, delta: float) -> dict[str, Any]:
     from models import cmal
-    from models.ealstm import load_ensemble
+    from models.ealstm import load_ensemble, simulate_reaches
 
     out: dict[str, Any] = {}
     dates = list(pd.date_range(fs.val_start, fs.val_end, freq="MS").date)
     for var in ("turbidity_proxy", "ndci"):
         ens = load_ensemble(var)
         reaches = (ens.data.nh_dir / "all_reaches.txt").read_text().split()
-        rid_all, p0_all, p1_all = [], [], []
-        for rid in reaches:
-            s = ens.data.statics(rid)
-            imp = float(s[list(ens.data.static_attributes).index("imperviousness_pct")])
-            m0 = ens.simulate(rid, dates)
-            m1 = ens.simulate(
-                rid, dates, static_overrides={"imperviousness_pct": min(imp + delta, 100.0)}
-            )
-            assert isinstance(m0, cmal.Mixture) and isinstance(m1, cmal.Mixture)
-            q0 = ens.target.inverse(cmal.quantiles(m0, (0.5,))[:, 0])
-            q1 = ens.target.inverse(cmal.quantiles(m1, (0.5,))[:, 0])
-            rid_all += [rid] * len(dates)
-            p0_all.append(q0)
-            p1_all.append(q1)
-        out[var] = summarise_response(
-            np.array(rid_all), np.concatenate(p0_all), np.concatenate(p1_all)
-        )
+        col = list(ens.data.static_attributes).index("imperviousness_pct")
+        over = {
+            r: {"imperviousness_pct": min(float(ens.data.statics(r)[col]) + delta, 100.0)}
+            for r in reaches
+        }
+        rid_rows, m0 = simulate_reaches(ens, reaches, dates)
+        _, m1 = simulate_reaches(ens, reaches, dates, over)
+        q0 = ens.target.inverse(cmal.quantiles(m0, (0.5,))[:, 0])
+        q1 = ens.target.inverse(cmal.quantiles(m1, (0.5,))[:, 0])
+        out[var] = summarise_response(np.array(rid_rows), q0, q1)
     return out
 
 

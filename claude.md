@@ -184,20 +184,18 @@ Day 4  — [x] alert engine + guardrails + exposure
            engine/alerts.py (5 guardrails, INSUFFICIENT_EVIDENCE first-class), tests/
            test_guardrails.py breaks each one; engine/exposure.py + `make exposure`.
            Not yet wired: a job that composes live alerts from forecasts + DB state.
-Day 5  — [~] EA-LSTM + assimilation + calibration + anomaly + gate   (SAGE-TS DROPPED)
-           CODE DONE, TRAINING PENDING. P5.1 path taken: NeuralHydrology 1.13 (installed,
-           smoke run passes) - NOT the PyTorch fallback. models/ealstm.py (NH train, own
-           epoch selection by val CMAL NLL, 5-seed CMAL mixture, predict/cdf, IG explain),
-           models/cmal.py, models/assimilation.py, models/calibration.py, models/anomaly.py
-           (weather-explained), models/head_to_head.py (P5.4 gate). Export: 41 train / 10
-           holdout / 348 simulatable reaches; statics used 6 of 9 (riparian_ndvi 90% NULL,
-           alan 100% NULL, urban_fraction proxy). Train on Colab: `make colab-bundle` ->
-           notebooks/ealstm_colab.ipynb -> `python scripts/make_colab_bundle.py --unpack
-           ealstm_runs.zip` -> `make hindcast h2h anomaly`. Gate NOT yet decided:
-           results/gate.json says lightgbm, decided=false. Found: LightGBM's imperviousness
-           response has the WRONG SIGN on 63-74% of reaches (README). LightGBM+assim adds
-           nothing (tau -> grid floor; variant A already sees as-of obs). IG on the 1-epoch
-           smoke model is incomplete (LSTM regime switch) - flagged per call, not hidden.
+Day 5  — [x] EA-LSTM + assimilation + calibration + anomaly + gate   (SAGE-TS DROPPED)
+           GATE (decided on 2024 val): LIGHTGBM STAYS PRODUCTION. EA-LSTM won 2/3 buckets for
+           NDCI (and missed coverage-no-worse by 0.00006) but 0/3 for turbidity -> fails.
+           Both models are reported in results/head_to_head.json and the README. P5.1 path:
+           NeuralHydrology 1.13 (Colab T4, 5 seeds x 2 targets), not the PyTorch fallback.
+           models/: ealstm, cmal, assimilation, calibration, anomaly (weather-explained),
+           head_to_head. Run order: make hindcast h2h anomaly. Found: imperviousness response
+           has the WRONG SIGN for BOTH models on 62-75% of reaches (README) - scenario effects
+           must come only from config/intervention_coefficients.yaml. Statics used: 6 of 9.
+           Anomaly scored against the 95th-pct PROXY (incidents.csv is empty), labelled so.
+           Assimilation helps EA-LSTM, adds nothing to LightGBM A. Attribution (IG) not run:
+           EA-LSTM is not production. Do not spend Day 6 rescuing the EA-LSTM.
 Day 6  — [ ] scenario engine + API
 Day 7  — [ ] frontend: map, detail, alerts
 Day 8  — [ ] frontend: scenarios, validation, Pune        ← feature freeze 18:00

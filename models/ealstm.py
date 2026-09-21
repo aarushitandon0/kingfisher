@@ -482,6 +482,24 @@ def load_ensemble(
 # ---------------------------------------------------------------------------
 # inputs + forward pass
 # ---------------------------------------------------------------------------
+def read_series(path: Path) -> pd.DataFrame:
+    """One exported reach series, read with netCDF4 directly: ~0.05 s per file against
+    1.5-3 s through xarray on Windows (348 reaches x 2 targets made the hindcast crawl).
+    Auto-masking is off: the export writes missing values as NaN (xarray's float
+    _FillValue), so NaN comes back as NaN - nothing is filled either way."""
+    import netCDF4
+
+    with netCDF4.Dataset(path) as ds:
+        ds.set_auto_mask(False)
+        t = ds.variables["date"]
+        dates = netCDF4.num2date(
+            t[:], t.units, getattr(t, "calendar", "standard"),
+            only_use_cftime_datetimes=False, only_use_python_datetimes=True,
+        )
+        cols = {k: np.asarray(v[:]) for k, v in ds.variables.items() if k != "date"}
+    return pd.DataFrame(cols, index=pd.DatetimeIndex(pd.to_datetime(list(dates)), name="date"))
+
+
 @dataclass
 class ReachData:
     """Reads the NH export (the same files the model was trained on)."""
@@ -495,15 +513,10 @@ class ReachData:
 
     def series(self, reach_id: str) -> pd.DataFrame:
         if reach_id not in self._series:
-            import xarray as xr
-
             path = self.nh_dir / "time_series" / f"{reach_id}.nc"
             if not path.exists():
                 raise LookupError(f"{reach_id} has no exported time series ({path})")
-            with xr.open_dataset(path) as ds:
-                df = ds.to_dataframe()
-            df.index = pd.DatetimeIndex(df.index, name="date")
-            self._series[reach_id] = df
+            self._series[reach_id] = read_series(path)
         return self._series[reach_id]
 
     def attributes(self) -> pd.DataFrame:
@@ -571,19 +584,18 @@ def forward_member(
     m: Member, windows: np.ndarray, x_s_norm: np.ndarray, batch_size: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Raw NH head output at the last time step, normalised target space. windows: (n, L,
-    F) raw drivers; x_s_norm: (S,) normalised statics."""
+    F) raw drivers; x_s_norm: (S,) normalised statics shared by every row, or (n, S)."""
     import torch
 
     xn = (windows - m.dyn_center) / m.dyn_scale
+    xs = np.broadcast_to(x_s_norm, (len(xn), len(m.static_attributes)))
     outs: list[list[np.ndarray]] = [[], [], [], []]
     with torch.no_grad():
         for i in range(0, len(xn), batch_size):
             xb = torch.from_numpy(xn[i : i + batch_size].astype("float32"))
             data = {
                 "x_d": {f: xb[:, :, j : j + 1] for j, f in enumerate(m.dynamic_inputs)},
-                "x_s": torch.from_numpy(
-                    np.repeat(x_s_norm[None, :], len(xb), axis=0).astype("float32")
-                ),
+                "x_s": torch.from_numpy(np.ascontiguousarray(xs[i : i + batch_size], "float32")),
             }
             pred = m.model(data)
             for k, key in enumerate(("mu", "b", "tau", "pi")):
@@ -592,6 +604,40 @@ def forward_member(
         k = m.model.head.fc2.out_features // 4
         return tuple(np.zeros((0, k)) for _ in range(4))  # type: ignore[return-value]
     return tuple(np.concatenate(o) for o in outs)  # type: ignore[return-value]
+
+
+def simulate_reaches(
+    ens: Ensemble,
+    reach_ids: Sequence[str],
+    end_dates: Sequence[date],
+    static_overrides: dict[str, dict[str, float]] | None = None,
+) -> tuple[list[str], cmal.Mixture]:
+    """Every reach x every end date in ONE batched pass per member (reach-major rows) -
+    for many-reach work like the scenario sensitivity check. Rows with an invalid window
+    or a NULL static are NaN, never filled."""
+    rows_w, rows_s, ok_all, rid_rows = [], [], [], []
+    for rid in reach_ids:
+        X, dates = ens.data.drivers(rid)
+        s_raw = ens.data.statics(rid, (static_overrides or {}).get(rid))
+        w, ok = build_windows(X, dates, end_dates, ens.seq_length)
+        if np.isnan(s_raw).any():
+            ok[:] = False
+        rows_w.append(w)
+        rows_s.append(np.repeat(s_raw[None, :], len(end_dates), axis=0))
+        ok_all.append(ok)
+        rid_rows += [rid] * len(end_dates)
+    W, S, OK = np.concatenate(rows_w), np.concatenate(rows_s), np.concatenate(ok_all)
+    mixes = []
+    for m in ens.members:
+        k = m.model.head.fc2.out_features // 4
+        arrays = [np.full((len(W), k), np.nan) for _ in range(4)]
+        if OK.any():
+            xs = (S[OK] - m.stat_mean) / m.stat_std
+            out = forward_member(m, W[OK], xs, ens.data.batch_size)
+            for a, v in zip(arrays, out, strict=True):
+                a[OK] = v
+        mixes.append(cmal.rescale(cmal.Mixture(*arrays), m.y_center, m.y_scale))
+    return rid_rows, cmal.ensemble(mixes)
 
 
 def simulate_member(
@@ -855,7 +901,9 @@ def hindcast(
         ens = load_ensemble(variable, es=es)
         with stage(log, "ealstm_hindcast", target=variable) as counters:
             n_in = 0
-            for rid in reaches:
+            for i, rid in enumerate(reaches, 1):
+                if i % 25 == 0 or i == len(reaches):
+                    log.info("ealstm.hindcast_progress", target=variable, reach=i, of=len(reaches))
                 y = ens.data.series(rid)[ens.target.nh_name]
                 y = y[(y.index >= pd.Timestamp(start)) & y.notna()]
                 n_in += len(y)
