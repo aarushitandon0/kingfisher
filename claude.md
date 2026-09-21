@@ -168,7 +168,11 @@ Update this section as you go so a fresh session knows where things stand.
 Day 0  — [ ] accounts, smoke tests
 Day 1  — [ ] L0 network + catchments + observability gate
 Day 2  — [ ] L1 satellite + L2 drivers
-Day 3  — [ ] LightGBM baseline + walk-forward eval        ← first shippable system
+Day 3  — [~] LightGBM baseline + walk-forward eval        ← first shippable system
+           code + 41 tests done (models/baseline_gbm.py, models/evaluate.py,
+           engine/probability.py; `make train`, `make evaluate`). GATE NOT MET: L1 has
+           only 2 reaches × 2023 (57 OK obs), so val/test have 0 targets and training
+           refuses (InsufficientTrainingData). Needs a full-period L1 run + `make dataset`.
 Day 4  — [ ] alert engine + guardrails + exposure
 Day 5  — [ ] SAGE-TS hybrid (hard gate EOD)
 Day 6  — [ ] scenario engine + API

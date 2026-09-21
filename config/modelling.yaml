@@ -42,3 +42,45 @@ frame:
     - first_flush_index
     - api_7
     - temp_mean_c
+
+baseline_gbm:
+  # models/baseline_gbm.py. Hyperparameters are fixed a priori, NOT tuned on the val or
+  # test fold, and there is no early stopping - early stopping on the evaluation fold
+  # would leak it into the model. Change them here, and re-run the whole evaluation.
+  version: "0.1.0"
+  quantiles: [0.1, 0.5, 0.9]
+  horizon_buckets:
+    h01_03: [1, 2, 3]
+    h04_07: [4, 5, 6, 7]
+    h08_10: [8, 9, 10]
+  # Refuse to fit a (bucket, variable) model on fewer target rows than this. A model
+  # fitted on a handful of rows produces plausible-looking quantiles from nothing.
+  min_train_rows: 200
+  params:
+    n_estimators: 400
+    learning_rate: 0.03
+    num_leaves: 15
+    min_data_in_leaf: 20
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    bagging_freq: 1
+    lambda_l2: 1.0
+    cat_smooth: 10
+    min_data_per_group: 20
+    seed: 20260923
+  # SHAP (TreeSHAP) is persisted for the P50 and P90 models - P90 is the upper tail
+  # the exceedance alerts live in.
+  shap_quantiles: [0.5, 0.9]
+
+evaluation:
+  # models/evaluate.py - MASTERSPEC 11.
+  # Seasonal-naive: the observation closest to the same day-of-year in the most recent
+  # previous year that has one within +/- this many days (S2 revisit is 5 d).
+  seasonal_naive_window_days: 7
+  # Climatology: the reach's training-fold observations within +/- this many days of
+  # the target's day-of-year (circular), pooled over all training years.
+  climatology_window_days: 15
+  # Fewer same-season training observations than this -> no climatology and no
+  # threshold for that reach-season. The row is counted, not filled.
+  min_climatology_obs: 5
+  reliability_bins: 10

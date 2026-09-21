@@ -2,7 +2,7 @@
 # Requires: docker compose, and a Python 3.11 env with `pip install -e ".[dev]"`.
 
 .DEFAULT_GOAL := help
-.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l2 static dataset db-up db-down db-migrate db-revision test lint format api
+.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l2 static dataset train evaluate db-up db-down db-migrate db-revision test lint format api
 
 PY ?= python
 
@@ -46,6 +46,12 @@ static:  ## L2: static catchment attributes (land-cover adapter chain)
 
 dataset:  ## Modelling frame + walk-forward splits + data summary
 	$(PY) -m pipeline.build_dataset --city $(or $(city),coimbra)
+
+train:  ## L3: LightGBM quantile baseline - walk-forward fits + production fit + SHAP
+	$(PY) -m models.baseline_gbm --city $(or $(city),coimbra)
+
+evaluate:  ## L3: walk-forward metrics vs baselines -> results/metrics.json + figures
+	$(PY) -m models.evaluate --city $(or $(city),coimbra)
 
 db-up:  ## Start PostGIS and wait until it is accepting connections
 	docker compose up -d db
