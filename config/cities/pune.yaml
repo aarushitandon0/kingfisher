@@ -1,10 +1,16 @@
-# Pune, India - transfer demo (Mula-Mutha). Same pipeline, different config.
-# Placeholder: bbox and adapters are set on Day 8. Do not build on this yet.
+# Pune, India - transfer demo (Mula-Mutha). Same pipeline, different config: the only
+# code-level differences are the land-cover adapter (WorldCover) and the tiles in `data:`.
 
 city: pune
 name: Pune
 country: IN
 reach_id_prefix: PUN
+
+# Input files, relative to data/raw/ (fetched by scripts/fetch_datasets.py).
+data:
+  osm_pbf: osm/india-western-zone-latest.osm.pbf
+  osm_overpass: osm/pune_overpass.json
+  population_zip: population/GHS_POP_E2020_GLOBE_R2023A_4326_3ss_V1_0_R8_C26.zip
 
 bbox:
   min_lon: 73.7300
@@ -21,6 +27,9 @@ timezone: Asia/Kolkata
 network:
   source: osm
   waterway_tags: [river, stream, canal]
+  # Same study-area knob as Coimbra: keep the Mula, Mutha, Pawana-side tributaries and
+  # the named nallas; drop order-1 drains that no 10 m sensor can see.
+  min_strahler: 2
   reach_length_m:
     target: 350
     min: 200
@@ -34,6 +43,10 @@ satellite:
   collection: sentinel-2-l2a
   start_date: 2016-01-01
   bands: [B02, B03, B04, B05, B08, B11, SCL]
+  # Riparian NDVI composite window (overrides config/sentinel2.yaml plan.riparian.window).
+  # July is peak south-west monsoon over Pune - near-continuous cloud. Mid-October to
+  # mid-November is post-monsoon: canopy still green, sky mostly clear.
+  riparian_window: ["10-15", "11-15"]
 
 weather:
   archive_start: 2016-01-01
@@ -47,6 +60,13 @@ weather:
   query_grid_deg: 0.1
   forecast_days: 10
   forecast_model: ecmwf_ifs          # same live model as Coimbra (see coimbra.yaml)
+  asissued:                          # same as Coimbra (see coimbra.yaml)
+    start: 2024-03-14
+    run_hour_utc: 0
+    forecast_days: 11
+    variables: [precipitation, temperature_2m]
+    daily_call_cap: 9000
+    hourly_call_cap: 4500
   variables:
     - precipitation
     - temperature_2m

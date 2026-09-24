@@ -6,6 +6,12 @@ name: Coimbra
 country: PT
 reach_id_prefix: CMB
 
+# Input files, relative to data/raw/ (fetched by scripts/fetch_datasets.py).
+data:
+  osm_pbf: osm/portugal-latest.osm.pbf
+  osm_overpass: osm/coimbra_overpass.json
+  population_zip: population/GHS_POP_E2020_GLOBE_R2023A_4326_3ss_V1_0_R5_C18.zip
+
 # Study area. Lower Mondego through Coimbra, including the tributaries
 # (Ribeira de Coselhas, Vale das Flores) and enough main channel to give the
 # observability gate some wide reaches to work with.

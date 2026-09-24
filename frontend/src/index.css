@@ -1,0 +1,217 @@
+@import "tailwindcss";
+
+/* Kingfisher design tokens - design.md. Chart paper, hairlines, the sediment ramp. */
+:root {
+  --water-clear: #a8c4cc;
+  --water-slight: #c4c2ae;
+  --water-turbid: #c79a5b;
+  --water-heavy: #9a6636;
+  --water-severe: #6b4423;
+
+  --chart-paper: #f2f0ea;
+  --chart-paper-alt: #e8e5dc;
+  --ink: #1c1f1e;
+  --ink-muted: #5a605d;
+  --hairline: #c8c5bb;
+
+  --alert: #b03a2e;
+  --watch: #c79a5b;
+  /* Ochre fails 4.5:1 on paper (~2.2:1). WATCH text uses this darker umber instead;
+     the ochre itself is only ever a stroke or a fill. */
+  --watch-text: #7a4f24;
+  --unknown: #9b9a94;
+  --kingfisher: #1b6b8c;
+  --scenario: #4a7c59;
+
+  color-scheme: light;
+}
+
+@theme {
+  --color-paper: var(--chart-paper);
+  --color-paper-alt: var(--chart-paper-alt);
+  --color-ink: var(--ink);
+  --color-muted: var(--ink-muted);
+  --color-hairline: var(--hairline);
+  --color-alert: var(--alert);
+  --color-watch: var(--watch);
+  --color-watch-text: var(--watch-text);
+  --color-unknown: var(--unknown);
+  --color-kf: var(--kingfisher);
+  --color-scenario: var(--scenario);
+  --color-clear: var(--water-clear);
+  --color-slight: var(--water-slight);
+  --color-turbid: var(--water-turbid);
+  --color-heavy: var(--water-heavy);
+  --color-severe: var(--water-severe);
+
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --spacing: 4px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--chart-paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 450;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Type scale (design.md). Numbers are tabular everywhere. */
+.t-display {
+  font-size: 32px;
+  line-height: 36px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.t-title {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.t-body {
+  font-size: 15px;
+  line-height: 24px;
+  font-weight: 400;
+}
+.t-ui {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 450;
+}
+.t-dense {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+}
+/* Mono is for measured or computed values only - never labels. */
+.t-reading {
+  font-family: var(--font-mono);
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.t-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+}
+.t-value-sm {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+}
+.t-reading,
+.t-value,
+.t-value-sm,
+table,
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus: always visible, kingfisher, 2px offset. Never outline: none. */
+:focus-visible {
+  outline: 2px solid var(--kingfisher);
+  outline-offset: 2px;
+}
+
+/* Hatching: the cartographic "unsurveyed" state = INSUFFICIENT_EVIDENCE. */
+.hatch {
+  background-color: color-mix(in srgb, var(--unknown) 55%, var(--chart-paper));
+  background-image: repeating-linear-gradient(45deg, #5f5e59 0, #5f5e59 1px, transparent 1px, transparent 4px);
+}
+/* A 3px hatched strip on the left edge. Drawn as a background, not border-image: table
+   cells in the collapsed border model ignore border-image. */
+.hatch-border {
+  border-left: 3px solid transparent;
+  background-image: repeating-linear-gradient(45deg, #5f5e59 0, #5f5e59 1px, color-mix(in srgb, var(--unknown) 55%, var(--chart-paper)) 1px, color-mix(in srgb, var(--unknown) 55%, var(--chart-paper)) 3px);
+  background-size: 3px 100%;
+  background-repeat: no-repeat;
+  background-position: left top;
+  background-origin: border-box;
+}
+
+.hairline-b {
+  border-bottom: 1px solid var(--hairline);
+}
+.hairline-t {
+  border-top: 1px solid var(--hairline);
+}
+.hairline-l {
+  border-left: 1px solid var(--hairline);
+}
+.hairline-r {
+  border-right: 1px solid var(--hairline);
+}
+
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* MapLibre chrome, quietened to match the paper. */
+.maplibregl-ctrl-group {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: 1px solid var(--hairline);
+  background: var(--chart-paper) !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--hairline) !important;
+}
+.maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--chart-paper) 85%, transparent) !important;
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+.maplibregl-ctrl-scale {
+  background: transparent !important;
+  border-color: var(--ink-muted) !important;
+  color: var(--ink-muted) !important;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.maplibregl-popup-content {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: 1px solid var(--hairline);
+  background: var(--chart-paper) !important;
+  padding: 6px 8px !important;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink);
+}
+.maplibregl-popup-tip {
+  display: none;
+}
+
+/* The one orchestrated moment: scenario bars descend from baseline to scenario. */
+.bar-descend {
+  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar-descend {
+    transition: none;
+  }
+}
+
+input[type="range"] {
+  accent-color: var(--kingfisher);
+}

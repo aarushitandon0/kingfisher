@@ -215,11 +215,17 @@ def _settings(city: str) -> dict[str, Any]:
     }
 
 
-def fetch(city: str, *, end: date | None = None) -> dict[str, Any]:
+def fetch(city: str, *, start: date | None = None, end: date | None = None) -> dict[str, Any]:
+    """Fetch every run from `start` (default: config asissued.start) to `end` (default:
+    yesterday). start = end = an issue date fetches that one run - what the production
+    forecast needs - without replaying the backlog."""
     cfg = _settings(city)
     cells = load_cells(city)
     end = end or datetime.now(UTC).date() - timedelta(days=1)
-    runs = run_times(cfg["start"], end, cfg["hour"])
+    start = start or cfg["start"]
+    if start < cfg["start"]:
+        raise ValueError(f"{start} is before the first archived run ({cfg['start']})")
+    runs = run_times(start, end, cfg["hour"])
     counts: Counter[str] = Counter()
     stopped: str | None = None
     last_request = 0.0
@@ -364,16 +370,34 @@ def build(city: str, *, horizons: list[int] | None = None) -> dict[str, Any]:
     }
 
 
+def _issue_date(city: str, value: str | None) -> date | None:
+    if value is None:
+        return None
+    if value != "latest":
+        return date.fromisoformat(value)
+    frame = pd.read_parquet(PROCESSED_DIR / f"frame_{city}.parquet", columns=["date"])
+    if frame.empty:
+        raise RuntimeError(f"frame_{city}.parquet is empty - run `make dataset`")
+    last: pd.Timestamp = pd.to_datetime(frame["date"]).max()
+    return date(last.year, last.month, last.day)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="As-issued ECMWF IFS weather (Single Runs API)")
     parser.add_argument("--city", default="coimbra")
     parser.add_argument("--fetch", action="store_true")
     parser.add_argument("--build", action="store_true")
+    parser.add_argument(
+        "--issue-date",
+        help="fetch only the run issued on this date (YYYY-MM-DD), or 'latest' for the "
+        "modelling frame's last day - the production forecast's issue date",
+    )
     args = parser.parse_args(argv)
     if not (args.fetch or args.build):
         parser.error("pass --fetch and/or --build")
     if args.fetch:
-        print(json.dumps(fetch(args.city), indent=2, default=str))
+        d = _issue_date(args.city, args.issue_date)
+        print(json.dumps(fetch(args.city, start=d, end=d), indent=2, default=str))
     if args.build:
         print(json.dumps(build(args.city), indent=2, default=str))
     return 0

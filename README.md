@@ -172,13 +172,93 @@ model re-inference must not be used to size the imperviousness effect of an
 intervention. Scenario effect sizes come from `config/intervention_coefficients.yaml`
 (cited literature), as the design requires, and not from the model.
 
+### The formal response check (MASTERSPEC 9.6)
+
+`make response-check`: each static attribute a lever perturbs is moved -1 SD and +1 SD on
+every held-out reach-day of the 2025-26 test fold and re-inferred with LightGBM B trained
+through 2024. Effect = change in mean P50 per 2-SD swing, in target SDs; negligible below
+0.02 (fixed in config before the check was first run).
+`results/scenario_response_check_coimbra.json`.
+
+| Attribute | Target | Effect (target SD) | Sign vs literature | Verdict |
+|-----------|--------|-------------------:|--------------------|---------|
+| imperviousness_pct | turbidity index | -0.033 | wrong | WRONG_SIGN |
+| imperviousness_pct | NDCI | -0.315 | wrong | WRONG_SIGN |
+| riparian_width_m | turbidity index | +0.014 | wrong | NEGLIGIBLE |
+| riparian_width_m | NDCI | +0.099 | wrong | WRONG_SIGN |
+
+The model is not trusted for any static lever. The scenario engine therefore reports
+permeable paving, green roofs and riparian buffers as **NOT_ESTIMABLE** (with this check
+shown beside the result), because the coefficient table has no cited effect on the stream
+state itself that could be applied directly. Detention basins and street sweeping act on
+weather drivers and go through the model. Both have honest near-zero central effects in the
+literature, and the results show exactly that.
+
+## The live run: forecast -> alerts
+
+```bash
+make live-weather       # the ECMWF IFS 00 UTC run issued on the frame's last day (1 request)
+make forecasts-latest   # re-issue the production forecast on that run -> forecasts (LIVE)
+make alerts             # guardrails + SHAP + exposure -> alerts + alert_runs
+```
+
+The production forecast is issued on the last day of the archive. The target-day weather
+for that forecast has not happened yet, so it comes from the ECMWF run issued that
+morning. The live system would have exactly this run. The rows are labelled `LIVE`. If
+the run has not been fetched, the forecast is still issued, labelled `ORACLE`, and every
+row counts its missing weather features (`future_drivers_missing`). The forecast
+endpoint then shows a note.
+
+**Run of 2026-09-20 (Coimbra):** 706 candidates (353 reaches x 2 variables).
+
+| Outcome | Count | Why |
+|---|---:|---|
+| ALERT | 1 | CMB-0145, turbidity index, peak P(exceed) 0.62 on 2026-09-30 |
+| WATCH | 0 | |
+| INSUFFICIENT_EVIDENCE | 604 | every driver-only reach: no seasonal threshold exists (never filled from neighbours) |
+| suppressed: confidence | 58 | peak P(exceed) below 0.6 |
+| suppressed: drift | 43 | recent residuals outside the calibration band |
+
+Suppressed candidates have no severity, so they are not alert rows. `alert_runs` counts
+them per guardrail, and `/api/alerts` returns those counts. A run that alerts on nothing
+is still recorded, so the API never passes "no run" off as "no alerts".
+
+**Drift residuals come from the walk-forward test-fold model.** The production model is
+fitted up to the issue date, so its residuals on recent dates are in-sample and would
+flatter it. Until it has issued forecasts of its own, the only out-of-sample residuals
+come from the test-fold model (trained through 2024, 1-day lead, archive weather). In
+Jul-Sep 2026 its turbidity observations fall outside P10-P90 more than half the time on
+28 of 47 reaches. So the guardrail fires often. That errs toward suppression, and every
+alert's `basis.drift_residual_source` says where its residuals came from.
+
+## Values chosen by the team (not by the literature)
+
+These are planning choices. They are fixed in config and do not come from a data fit:
+
+- **Scenario interval widening factor 1.5** (`config/intervention_coefficients.yaml`): scenario interval
+  width = 1.5 x max(its own width, the baseline width). This makes it strictly wider than
+  the baseline interval.
+- **Negligible-response cutoff 0.02 target SD** (`config/modelling.yaml`): fixed before
+  the response check was first run.
+- **Exposure weights for `/api/priorities`** (`config/priorities.yaml`): they rank
+  where monitoring is worth most. They are labelled as a planning choice, not a risk score.
+
+Scenario requests send `extent` (how much of a lever), not `magnitude`. In
+`config/intervention_coefficients.yaml`, `magnitude` is the cited effect size, and a
+request can never set it. A request that sends `magnitude` gets a 422 that says why.
+
+**Spatial scope of scenarios.** A lever changes only the catchments of the selected
+reaches. The treated area also lies inside the catchments of the reaches downstream, and
+that effect is not propagated to them. Every scenario result states this.
+
 ## Attribution
 
 ```
 Contains modified Copernicus Sentinel data (2015–2026), processed by Kingfisher.
 Contains Copernicus Land Monitoring Service information (Imperviousness Density,
   Riparian Zones, Urban Atlas).
-Weather data © Open-Meteo.com (CC-BY-4.0), derived from ECMWF ERA5/ERA5-Land.
+Weather data © Open-Meteo.com (CC-BY-4.0), derived from ECMWF ERA5/ERA5-Land and
+  ECMWF IFS HRES forecasts.
 Map data © OpenStreetMap contributors, available under the Open Database Licence.
 MERIT Hydro © Dai Yamazaki (University of Tokyo) — CC-BY-NC 4.0 / ODbL dual licensed.
 Water quality reference data: SNIRH / Agência Portuguesa do Ambiente; EEA Waterbase.

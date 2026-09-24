@@ -99,6 +99,15 @@ def load_city_config(city: str) -> dict[str, Any]:
     return cfg
 
 
+def raw_data_path(cfg: dict[str, Any], key: str) -> Path:
+    """An input file named in the city config's `data:` block, relative to data/raw/."""
+    try:
+        rel = cfg["data"][key]
+    except KeyError as exc:
+        raise KeyError(f"config/cities/{cfg['city']}.yaml has no data.{key}") from exc
+    return DATA_DIR / "raw" / str(rel)
+
+
 def bbox_tuple(cfg: dict[str, Any]) -> tuple[float, float, float, float]:
     b = cfg["bbox"]
     return (b["min_lon"], b["min_lat"], b["max_lon"], b["max_lat"])
@@ -205,11 +214,11 @@ def extract_waterways(
     computed on the whole extracted network, and only *reaches* outside the bbox are
     dropped later. Clipping lines before building the graph would invent headwaters.
     """
-    pbf_path = pbf_path or (DATA_DIR / "raw" / "osm" / "portugal-latest.osm.pbf")
+    pbf_path = pbf_path or raw_data_path(cfg, "osm_pbf")
     if not pbf_path.exists():
         raise FileNotFoundError(
             f"OSM extract not found at {pbf_path}. Run `python scripts/fetch_datasets.py` "
-            "(key: osm_portugal) to download the Geofabrik extract."
+            "to download the Geofabrik extract named in the city config (data.osm_pbf)."
         )
 
     bbox = bbox_tuple(cfg)

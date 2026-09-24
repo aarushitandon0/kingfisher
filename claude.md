@@ -183,7 +183,8 @@ Day 3  — [x] LightGBM baseline + walk-forward eval        ← first shippable 
 Day 4  — [x] alert engine + guardrails + exposure
            engine/alerts.py (5 guardrails, INSUFFICIENT_EVIDENCE first-class), tests/
            test_guardrails.py breaks each one; engine/exposure.py + `make exposure`.
-           Not yet wired: a job that composes live alerts from forecasts + DB state.
+           Wired (Day 6): `make live-weather forecasts-latest alerts` - engine/alert_run.py
+           (pure) + models/alert_run.py -> alerts + alert_runs (migration 0005).
 Day 5  — [x] EA-LSTM + assimilation + calibration + anomaly + gate   (SAGE-TS DROPPED)
            GATE (decided on 2024 val): LIGHTGBM STAYS PRODUCTION. EA-LSTM won 2/3 buckets for
            NDCI (and missed coverage-no-worse by 0.00006) but 0/3 for turbidity -> fails.
@@ -196,7 +197,31 @@ Day 5  — [x] EA-LSTM + assimilation + calibration + anomaly + gate   (SAGE-TS 
            Anomaly scored against the 95th-pct PROXY (incidents.csv is empty), labelled so.
            Assimilation helps EA-LSTM, adds nothing to LightGBM A. Attribution (IG) not run:
            EA-LSTM is not production. Do not spend Day 6 rescuing the EA-LSTM.
-Day 6  — [ ] scenario engine + API
+Day 6  — [x] scenario engine + API
+           engine/scenarios.py (pure): variant B only; per lever x variable the path is
+           MODEL_PERTURBATION | LITERATURE_DIRECT | NOT_ESTIMABLE from the 9.6 response check
+           (`make response-check` -> results/scenario_response_check_<city>.json, tied to the
+           serving model version; negligible threshold fixed in modelling.yaml first).
+           RESULT ON COIMBRA: every static lever FAILS (imperviousness WRONG_SIGN both targets;
+           riparian_width NEGLIGIBLE turbidity / WRONG_SIGN ndci) -> paving, green roofs,
+           buffer are NOT_ESTIMABLE until a CITED `direct_effect` is added to the YAML (schema
+           exists; none invented). Detention + sweeping (driver levers) go through the model.
+           Exceedance days = sum of daily P(exceed), Poisson-binomial interval; scenario
+           interval = 1.5 x max(own, baseline) width, asserted strictly wider. Central value at
+           the cited magnitude (sweeping stays 0). No downstream propagation (stated on result).
+           API: all 11 MASTERSPEC 12 routes, api/repository.py (PostGIS) behind a Protocol,
+           migration 0004, `make forecasts-latest` writes production forecasts to the DB.
+           Tests: test_scenarios, test_api_contract, test_api_db (marked db, cleans up),
+           test_priorities, test_alert_run.
+           [x] live run: production forecast now uses the ECMWF run of its issue date
+           (weather=LIVE, 0 missing future drivers; `make live-weather` = 1 request).
+           Alert run 2026-09-20: 1 ALERT (CMB-0145 turbidity, 0.62), 604 INSUFFICIENT_EVIDENCE
+           (all driver-only: no threshold), suppressed 58 confidence + 43 drift. Drift
+           residuals come from the wf-test model (production is in-sample) - labelled in
+           basis. alert_runs records suppressed counts; /api/alerts returns them.
+           Speed: /api/reaches ~0.3-0.9 s (vectorised thresholds + partial index on
+           production forecasts); scenario model warmed at API startup (SCENARIO_WARMUP).
+           Scenarios still do NOT propagate downstream (stated on every result).
            [x] config/intervention_coefficients.yaml: 5 cited levers (buffer, permeable
            paving, detention, street sweeping, green roofs); daylighting is not_quantified
            (no effect size in the literature). Load ONLY via core.config.
@@ -205,8 +230,27 @@ Day 6  — [ ] scenario engine + API
            Detention (0.3 %, Emerson 2005) and street sweeping (central 0, Selbig 2007) are
            honest near-zero effects - do not "fix" them. Costs are in source currency
            (street sweeping is USD); never convert silently. hybrid_sage.py deleted.
-Day 7  — [ ] frontend: map, detail, alerts
-Day 8  — [ ] frontend: scenarios, validation, Pune        ← feature freeze 18:00
+Day 7  — [x] frontend: map, detail, alerts
+           frontend/ (Vite 8, React 19, MapLibre 6, Zustand, Tailwind 4, Recharts 3): `make web`.
+           Visual language is design.md (chart paper, sediment ramp, hatched INSUFFICIENT_EVIDENCE).
+           Heat Surgeon had no MapLibre code to lift (built SVG bundle only) - basemap is
+           OpenFreeMap Positron recoloured in src/map/basemap.ts. Hydrograph rail scrubs the map
+           through past observations (observed / seasonal threshold) and forecast days.
+           New read-only API routes for it: /api/timeline, /api/reaches/{id}/catchment,
+           /api/reaches/{id}/attribution (STORED production TreeSHAP, nothing recomputed),
+           /api/exposure, /api/scenarios/interventions; alerts list now carries stored exposure;
+           GZip on. /api/validation/metrics takes ?city= (results/<city>/metrics.json for any
+           city but the primary - core.settings.results_dir_for).
+Day 8  — [~] frontend: scenarios, validation, Pune        ← feature freeze 18:00
+           [x] scenario workbench (click/lasso, cited levers + extents, swipe before/after,
+           per-reach days + intervals, costs in source currency, citations as text) and
+           validation page (reliability, skill table incl. losses, anomaly P/R/F1 vs PROXY,
+           lead time = not computed, observable vs driver-only).
+           Pune: data paths moved into config/cities/*.yaml `data:`; fetch_datasets.py --only
+           pune; Pune riparian window 15 Oct-15 Nov (monsoon). L0 on COPDEM fallback: 312
+           reaches, 57 monotonicity violations (18%, REVIEW - bad snaps on the 30 m DEM).
+           Gate: 59/312 observable. Full as-issued backfill NOT run for Pune (quota) - only
+           the live run for the production forecast, so Pune's ASISSUED evaluation is absent.
 Day 9  — [ ] docs, FHIR, deploy
 Day 10 — [ ] video, SUBMIT
 ```

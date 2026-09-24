@@ -781,13 +781,18 @@ class RunPlan:
     probe_years: tuple[int, ...]
 
     @classmethod
-    def from_config(cls, s2: dict[str, Any]) -> RunPlan:
+    def from_config(cls, s2: dict[str, Any], city_cfg: dict[str, Any] | None = None) -> RunPlan:
+        """`satellite.riparian_window` in the city config overrides the global window: a
+        July composite is midsummer in Coimbra and peak monsoon cloud in Pune."""
         p = s2["plan"]
+        window = ((city_cfg or {}).get("satellite") or {}).get("riparian_window") or p["riparian"][
+            "window"
+        ]
         return cls(
             water_years=tuple(int(y) for y in p["water"]["years"]),
             water_observable_only=bool(p["water"]["observable_only"]),
             riparian_years=tuple(int(y) for y in p["riparian"]["years"]),
-            riparian_window=(str(p["riparian"]["window"][0]), str(p["riparian"]["window"][1])),
+            riparian_window=(str(window[0]), str(window[1])),
             probe_years=tuple(int(y) for y in p["pre_2018_probe"]["years"]),
         )
 
@@ -955,7 +960,7 @@ def fetch_observations(
     """The planned L1 run (config/sentinel2.yaml -> plan). See the module docstring."""
     s2 = load_config("sentinel2")
     s = load_settings(city)
-    plan = RunPlan.from_config(s2)
+    plan = RunPlan.from_config(s2, load_city_config(city))
     today = today or datetime.now(UTC).date()
 
     reaches = load_reaches(city)
@@ -1151,7 +1156,7 @@ def probe_pre_2018(city: str, *, reach_id: str | None = None) -> dict[str, Any]:
     backwards is made on this report."""
     s2 = load_config("sentinel2")
     s = load_settings(city)
-    plan = RunPlan.from_config(s2)
+    plan = RunPlan.from_config(s2, load_city_config(city))
     reaches = [r for r in load_reaches(city) if r["observable"] is True]
     reach = (
         next((r for r in reaches if r["reach_id"] == reach_id), None) if reach_id else reaches[0]

@@ -13,7 +13,6 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 TABLE_COLUMNS = [
@@ -26,6 +25,15 @@ TABLE_COLUMNS = [
     "percentile",
     "fit_end",
 ]
+
+
+def derivation_text(cfg: dict[str, Any], variable: str) -> str:
+    """How a variable's threshold is derived, in words - shown on every alert."""
+    v = cfg["variables"][variable]
+    return (
+        f"{v['derivation']}: P{round(float(v['percentile']) * 100)} of the "
+        f"{' '.join(str(v['source']).split())} (min {v['min_obs']} observations)"
+    )
 
 
 def month_to_season(seasons: dict[str, list[int]]) -> dict[int, str]:
@@ -50,32 +58,48 @@ def seasonal_thresholds(obs: pd.DataFrame, fit_end: date, cfg: dict[str, Any]) -
     cfg: the whole thresholds config. Returns one row per (reach, variable, season) that
     has >= min_obs fitting-period observations; reach-seasons below that are absent."""
     seasons = cfg["seasons"]
-    rows: list[dict[str, Any]] = []
+    parts: list[pd.DataFrame] = []
     fit = obs[pd.to_datetime(obs["date"]) <= pd.Timestamp(fit_end)]
-    fit = fit.assign(season=season_of(fit["date"], seasons))
+    fit = pd.DataFrame(
+        {
+            "reach_id": fit["reach_id"].astype(str).to_numpy(dtype=object),
+            "variable": fit["variable"].astype(str).to_numpy(dtype=object),
+            "season": season_of(fit["date"], seasons).to_numpy(dtype=object),
+            "value": pd.to_numeric(fit["value"]).to_numpy(dtype="float64"),
+        }
+    ).dropna(subset=["value"])
     for var, vcfg in cfg["variables"].items():
         if vcfg["derivation"] != "per_reach_seasonal_percentile":
             raise ValueError(f"{var}: unsupported derivation {vcfg['derivation']!r}")
         pct, min_obs = float(vcfg["percentile"]), int(vcfg["min_obs"])
-        for (rid, season), g in fit[fit["variable"] == var].groupby(["reach_id", "season"]):
-            values = g["value"].to_numpy(dtype="float64")
-            values = values[~np.isnan(values)]
-            if len(values) < min_obs:
-                continue
-            thr = float(np.quantile(values, pct))
-            rows.append(
-                {
-                    "reach_id": str(rid),
-                    "variable": var,
-                    "season": season,
-                    "threshold": thr,
-                    "n_obs": len(values),
-                    "clim_exceed_freq": float((values > thr).mean()),
-                    "percentile": pct,
-                    "fit_end": fit_end,
-                }
-            )
-    return pd.DataFrame(rows, columns=TABLE_COLUMNS)
+        v = fit[fit["variable"] == var]
+        if v.empty:
+            continue
+        # linear interpolation, as np.quantile's default
+        g = v.groupby(["reach_id", "season"], sort=True)["value"]
+        agg = pd.DataFrame({"threshold": g.quantile(pct), "n_obs": g.size()})
+        agg = agg[agg["n_obs"] >= min_obs]
+        if agg.empty:
+            continue
+        above = v.join(agg["threshold"], on=["reach_id", "season"], how="inner")
+        freq = (
+            (above["value"] > above["threshold"])
+            .groupby([above["reach_id"], above["season"]])
+            .mean()
+        )
+        agg = agg.assign(clim_exceed_freq=freq).reset_index()
+        parts.append(
+            agg.assign(
+                variable=var,
+                n_obs=agg["n_obs"].astype(int),
+                clim_exceed_freq=agg["clim_exceed_freq"].astype(float),
+                percentile=pct,
+                fit_end=fit_end,
+            )[TABLE_COLUMNS]
+        )
+    if not parts:
+        return pd.DataFrame(columns=TABLE_COLUMNS)
+    return pd.concat(parts, ignore_index=True)
 
 
 def lookup(

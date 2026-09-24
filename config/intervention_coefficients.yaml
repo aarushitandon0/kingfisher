@@ -357,8 +357,12 @@ climate_scenarios: []   # +2C summer mean, +20% rainfall intensity, +30% dry spe
 # statistical model's features is correlational extrapolation, not a causal
 # experiment (MASTERSPEC section 9.1).
 uncertainty_inflation:
-  interval_widening_factor: null   # set on Day 6 with the scenario engine
+  # Scenario interval width = factor x max(scenario interval width, baseline interval
+  # width): the baseline's forecast uncertainty does not go away when a lever is
+  # applied, and the extrapolation adds to it. A stated planning choice, not a
+  # literature value. engine/scenarios.py refuses a factor <= 1.
+  interval_widening_factor: 1.5
   caveat: >
     Planning estimate. Intervention effect sizes are taken from cited literature and
-    applied to a statistical model; this is not a causal experiment. Prediction
-    intervals have been widened accordingly.
+    applied to a statistical model; this is not a causal experiment. Intervals have
+    been widened accordingly.

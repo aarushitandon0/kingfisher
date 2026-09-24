@@ -181,3 +181,37 @@ gate:
   coverage_tolerance: 0.0
   # LightGBM variant compared (A = production fit; B is reported alongside)
   lightgbm_variant: A
+
+scenario:
+  # engine/scenarios.py + models/scenario_response.py - MASTERSPEC 9.5 / 9.6.
+  # Fixed on 2026-09-24 BEFORE the response check was first run. Changing any value in
+  # this block means re-running `make response-check` - the check file records it.
+  #
+  # Binding rule 1: scenarios use variant B only (no reach identity). Variant A is the
+  # forecasting model and is never asked "what if".
+  fit: B.production
+  # The weather year every scenario is run under: one row per reach-day, horizon 1, with
+  # that year's archive weather. Must be one whole calendar year so "exceedance days per
+  # year" is literally that.
+  reference_period:
+    start: 2025-01-01
+    end: 2025-12-31
+  horizon: 1
+  # Central interval reported for baseline and scenario exceedance-day counts
+  # (0.80 = the P10-P90 convention used everywhere else).
+  ci_level: 0.80
+  # Coefficient uncertainty is propagated by evaluating each lever at this many
+  # quantiles of a triangular(low, magnitude, high) distribution over its
+  # uncertainty_range - deterministic, no random seed.
+  coefficient_samples: 9
+  response_check:
+    # Binding rule 2: each static feature a lever perturbs is moved -1 SD and +1 SD (SD over
+    # reaches, training fold) on the walk-forward TEST fold, re-inferred with the variant-B
+    # fit whose training ended before that fold, everything else fixed.
+    fit: B.wf-test
+    fold: test
+    # effect = mean(P50 at +1 SD) - mean(P50 at -1 SD), divided by the SD of the target's
+    # OK observations in the training fold. |effect| below this is NEGLIGIBLE and the
+    # model is not trusted for the lever (a 2-SD swing in the attribute moving the
+    # forecast by less than 2 % of the target's own spread).
+    negligible_effect_sd: 0.02

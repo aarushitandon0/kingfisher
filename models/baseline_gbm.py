@@ -46,7 +46,8 @@ OUTPUTS
   artifacts/models/<version>/            boosters (LightGBM text) + manifest.json
   artifacts/models/<city>__<fit>.json    pointer to the current version of that fit
   data/processed/gbm_eval_<city>.parquet     walk-forward forecasts with observations
-  data/processed/gbm_latest_<city>.parquet   production forecast at the last issue date
+  data/processed/gbm_latest_<city>.parquet   production forecast at the last issue date,
+                                             driven by that day's ECMWF run (LIVE) if fetched
   data/processed/gbm_shap_<city>.parquet     SHAP rows for both of the above
   data/processed/gbm_run_<city>.json         run manifest (versions, frame hash)
 
@@ -683,7 +684,7 @@ def explain(
 # ---------------------------------------------------------------------------
 # orchestration
 # ---------------------------------------------------------------------------
-ORACLE, ASISSUED = "ORACLE", "ASISSUED"
+ORACLE, ASISSUED, LIVE = "ORACLE", "ASISSUED", "LIVE"
 
 
 def substitute_future_drivers(
@@ -750,6 +751,98 @@ def forecast_and_explain(
     if not shap.empty:
         shap["variant"] = vname
     return pred, shap
+
+
+def production_forecast(
+    model: FittedGBM, rows: pd.DataFrame, asissued: pd.DataFrame | None
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The forecast issued on the frame's last day, and its TreeSHAP rows.
+
+    Its t+h driver features cannot come from the archive - those days have not happened.
+    They come from the as-issued ECMWF IFS run of the issue date (pipeline.asissued_weather
+    --issue-date), exactly what the live system has, and the rows are labelled LIVE. With
+    no run on disk the archive columns stay NULL, the rows are labelled ORACLE and
+    `future_drivers_missing` says how many were NULL - weaker, and visibly so.
+    """
+    dates = pd.to_datetime(rows["date"]).dt.date.unique()
+    if len(dates) != 1:
+        raise ValueError(f"production forecast needs one issue date, got {len(dates)}")
+    issued = dates[0]
+    run = (
+        asissued[pd.to_datetime(asissued["issued_date"]).dt.date == issued]
+        if asissued is not None
+        else pd.DataFrame()
+    )
+    if run.empty:
+        log.warning(
+            "gbm.production_without_weather",
+            issued_date=str(issued),
+            fix=f"python -m pipeline.asissued_weather --fetch --build --issue-date {issued}",
+        )
+        pred, shap = forecast_and_explain(model, rows, require_target=False)
+    else:
+        oracle_n = sum(
+            len(
+                to_long(
+                    rows,
+                    model.frame_settings,
+                    v,
+                    model.frame_settings.horizons,
+                    model.categories,
+                    require_target=False,
+                )
+            )
+            for v in model.frame_settings.variables
+        )
+        pred, shap = forecast_and_explain(model, rows, require_target=False, asissued=run)
+        if len(pred) != oracle_n:
+            # substitute_future_drivers drops rows whose weather cell has no run
+            raise RuntimeError(
+                f"as-issued run of {issued} covers {len(pred)} of {oracle_n} forecast rows - "
+                "a reach's weather cell is missing from the run"
+            )
+        pred["weather"] = LIVE
+    if not shap.empty:
+        shap["fold"] = PRODUCTION
+    return pred, shap
+
+
+def forecast_latest(city: str) -> dict[str, Any]:
+    """Re-issue the production forecasts (every variant) from the saved production fits
+    without retraining - after an as-issued run for the issue date has been fetched.
+    Rewrites gbm_latest_<city>.parquet and the production rows of gbm_shap_<city>.parquet."""
+    gs = GBMSettings.from_config()
+    frame = load_frame(city)
+    last = pd.to_datetime(frame["date"]).max().date()
+    rows = frame[pd.to_datetime(frame["date"]).dt.date == last]
+    asissued = load_asissued(city)
+    latests, shaps, summary = [], [], {}
+    with stage(log, "gbm_forecast_latest", city=city) as counters:
+        for vname in gs.variants:
+            model = load(city, f"{vname}.{PRODUCTION}")
+            if model.train_end != last:
+                raise RuntimeError(
+                    f"{model.version} was trained to {model.train_end}, the frame ends {last} "
+                    "- retrain (`make train`) before issuing from it"
+                )
+            pred, shap = production_forecast(model, rows, asissued)
+            latests.append(pred)
+            shaps.append(shap)
+            summary[vname] = {
+                "version": model.version,
+                "weather": str(pred["weather"].iloc[0]),
+                "forecasts": len(pred),
+                "with_missing_future_drivers": int((pred["future_drivers_missing"] > 0).sum()),
+            }
+        latest_all = pd.concat(latests, ignore_index=True)
+        latest_all.to_parquet(PROCESSED_DIR / f"gbm_latest_{city}.parquet", index=False)
+        shap_path = PROCESSED_DIR / f"gbm_shap_{city}.parquet"
+        old = pd.read_parquet(shap_path) if shap_path.exists() else pd.DataFrame()
+        if not old.empty:
+            old = old[old["fold"] != PRODUCTION]
+        pd.concat([old, *shaps], ignore_index=True).to_parquet(shap_path, index=False)
+        counters.record(rows_in=len(rows), rows_out=len(latest_all), variants=summary)
+    return {"city": city, "issued_date": str(last), "variants": summary}
 
 
 def load_asissued(city: str) -> pd.DataFrame | None:
@@ -867,8 +960,7 @@ def train_all(city: str) -> dict[str, Any]:
             )
             save(prod)
             latest_rows = frame[pd.to_datetime(frame["date"]).dt.date == last]
-            latest, latest_shap = forecast_and_explain(prod, latest_rows, require_target=False)
-            latest_shap["fold"] = PRODUCTION
+            latest, latest_shap = production_forecast(prod, latest_rows, asissued)
             shaps.append(latest_shap)
             latests.append(latest)
             run["fits"][pname] = {
@@ -877,6 +969,7 @@ def train_all(city: str) -> dict[str, Any]:
                 "train_end": str(last),
                 "latest_issue_date": str(last),
                 "latest_forecasts": len(latest),
+                "latest_weather": str(latest["weather"].iloc[0]),
                 "latest_with_missing_future_drivers": int(
                     (latest["future_drivers_missing"] > 0).sum()
                 ),
@@ -904,8 +997,13 @@ def train_all(city: str) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Train the LightGBM quantile baseline")
     parser.add_argument("--city", default="coimbra")
+    parser.add_argument(
+        "--latest-only",
+        action="store_true",
+        help="re-issue the production forecasts from the saved fits (no training)",
+    )
     args = parser.parse_args(argv)
-    run = train_all(args.city)
+    run = forecast_latest(args.city) if args.latest_only else train_all(args.city)
     print(json.dumps(run, indent=2, default=str))
     return 0
 

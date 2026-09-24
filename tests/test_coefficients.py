@@ -114,3 +114,29 @@ def test_error_names_the_offending_entry(raw: dict[str, Any]) -> None:
     cfg = _broken(raw, BREAKAGES["citation_removed"])
     with pytest.raises(UncitedCoefficientError, match=raw["interventions"][0]["id"]):
         validate_coefficients(cfg)
+
+
+def test_direct_effect_must_be_cited(raw: dict[str, Any]) -> None:
+    """A LITERATURE_DIRECT coefficient is held to the same rule as every other number."""
+    cfg = copy.deepcopy(raw)
+    cfg["interventions"][1]["direct_effect"] = {
+        "targets": ["turbidity_proxy"],
+        "operation": "scale_quantiles",
+        "unit": "fraction",
+        "description": "uncited",
+        "magnitude": 0.3,
+        "uncertainty_range": [0.1, 0.5],
+        "citation": [
+            {
+                "authors": "X",
+                "year": 2020,
+                "title": "T",
+                "source": "S",
+                "doi": "10.0/x",
+                "locator": "L",
+                "supports": ["direct_magnitude"],
+            }
+        ],
+    }
+    with pytest.raises(UncitedCoefficientError, match="direct_uncertainty_high"):
+        validate_coefficients(cfg)

@@ -1,0 +1,27 @@
+# Prioritisation panel - engine/priorities.py (MASTERSPEC 10).
+#
+#   information_value(reach) = forecast_uncertainty x predicted_risk x exposure_weight
+#
+#   predicted_risk        peak daily P(exceed) over the latest forecast window, per variable
+#   forecast_uncertainty  mean (P90 - P10) over the window, divided by the largest such mean
+#                         among the ranked reaches for that variable -> [0, 1]
+#   exposure_weight       log1p(E) / log1p(max E over ranked reaches), where
+#                         E = sum(weight[type] * count[type]) + population / population_unit
+#   A reach's value is its largest per-variable uncertainty x risk, times its exposure
+#   weight. Reaches with no threshold (every driver-only reach) or no exposure rows are
+#   listed as not ranked, with the reason - never scored as zero.
+#
+# THE WEIGHTS BELOW ARE A STATED PLANNING CHOICE, NOT A MEASUREMENT. They rank where people
+# are most likely to meet the water: places children gather and direct water access count
+# three times a passing path. Change them here; the response states them.
+
+exposure_weights:
+  school: 3
+  kindergarten: 3
+  playground: 3
+  water_access: 3
+  park: 1
+  footway: 1
+  cycleway: 1
+  healthcare: 1
+population_unit: 1000     # every 1,000 residents in the buffer counts as weight 1

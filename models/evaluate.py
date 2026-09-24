@@ -81,7 +81,7 @@ import pandas as pd
 
 from core.config import load_config
 from core.logging import get_logger, stage
-from core.settings import REPO_ROOT
+from core.settings import REPO_ROOT, results_dir_for
 from engine.probability import exceedance_probability_multi
 from engine.thresholds import lookup as threshold_lookup
 from engine.thresholds import seasonal_thresholds
@@ -1068,6 +1068,46 @@ def persist_forecasts(pred: pd.DataFrame) -> int:
     return written
 
 
+def latest_forecast_records(latest: pd.DataFrame) -> pd.DataFrame:
+    """Production forecasts at the last issue date (models.baseline_gbm writes them to
+    gbm_latest_<city>.parquet) -> `forecasts` rows with fit 'production' and the count of
+    t+h driver features that were NULL: on the last archive day the target-day weather
+    does not exist yet, and the row says so."""
+    if latest.empty:
+        raise ValueError("no production forecasts to persist")
+    if "future_drivers_missing" not in latest:
+        raise ValueError("latest forecasts lack future_drivers_missing - retrain")
+    rows = forecast_records(latest.assign(fold="production"))
+    rows["fit"] = "production"
+    rows["future_drivers_missing"] = latest["future_drivers_missing"].astype(int).to_numpy()
+    return rows
+
+
+def persist_latest_forecasts(city: str) -> int:
+    """Replace the production forecasts of the versions in gbm_latest_<city>.parquet."""
+    from sqlalchemy import text
+
+    from core.db import bulk_upsert, session_scope
+    from pipeline.build_dataset import PROCESSED_DIR
+
+    path = PROCESSED_DIR / f"gbm_latest_{city}.parquet"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} missing - run `make train`")
+    rows = latest_forecast_records(pd.read_parquet(path))
+    versions = sorted(rows["model_version"].unique())
+    with session_scope() as session:
+        session.execute(
+            text("DELETE FROM forecasts WHERE model_version = ANY(:v)"), {"v": versions}
+        )
+    written = bulk_upsert(
+        rows,
+        "forecasts",
+        ["reach_id", "issued_date", "target_date", "variable", "model_version", "weather"],
+    )
+    log.info("evaluate.latest_forecasts_written", rows=written, versions=versions)
+    return written
+
+
 # ---------------------------------------------------------------------------
 # I/O
 # ---------------------------------------------------------------------------
@@ -1196,6 +1236,8 @@ def evaluate(
         (results_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
         figures = write_figures(metrics, results_dir / "figures")
         written = persist_forecasts(pred) if write_db else 0
+        if write_db:
+            written += persist_latest_forecasts(city)
         counters.record(
             rows_in=len(pred),
             rows_out=sum(len(s) for s in scored_by_run.values()),
@@ -1212,6 +1254,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--city", default="coimbra")
     parser.add_argument("--no-db", action="store_true", help="do not write the forecasts table")
     parser.add_argument(
+        "--latest-only",
+        action="store_true",
+        help="only write the production (latest issue date) forecasts to the forecasts table",
+    )
+    parser.add_argument(
         "--head-to-head",
         action="store_true",
         help="P5.4: all forecasters, assimilation + calibration, the production gate "
@@ -1223,7 +1270,10 @@ def main(argv: list[str] | None = None) -> int:
 
         run(args.city)
         return 0
-    evaluate(args.city, write_db=not args.no_db)
+    if args.latest_only:
+        print(f"{persist_latest_forecasts(args.city)} production forecasts written")
+        return 0
+    evaluate(args.city, results_dir=results_dir_for(args.city), write_db=not args.no_db)
     return 0
 
 

@@ -2,7 +2,7 @@
 # Requires: docker compose, and a Python 3.11 env with `pip install -e ".[dev]"`.
 
 .DEFAULT_GOAL := help
-.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l1-probe l2 static asissued exposure s2-shift dataset train evaluate nh-export ealstm-smoke ealstm-train ealstm-status colab-bundle hindcast h2h anomaly db-up db-down db-migrate db-revision test lint format api
+.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l1-probe l2 static asissued exposure s2-shift dataset train evaluate nh-export ealstm-smoke ealstm-train ealstm-status colab-bundle hindcast h2h anomaly response-check live-weather forecasts-latest alerts db-up db-down db-migrate db-revision test lint format api web web-install
 
 PY ?= python
 
@@ -65,6 +65,19 @@ train:  ## L3: LightGBM quantile baseline - walk-forward fits + production fit +
 evaluate:  ## L3: walk-forward metrics (A/B x oracle/as-issued) -> metrics.json + forecasts table
 	$(PY) -m models.evaluate --city $(or $(city),coimbra)
 
+live-weather:  ## L2: fetch + build the ECMWF run issued on the frame's last day (1 request)
+	$(PY) -m pipeline.asissued_weather --city $(or $(city),coimbra) --fetch --build --issue-date latest
+
+forecasts-latest:  ## L3: re-issue the production forecast on that run (LIVE) -> forecasts table
+	$(PY) -m models.baseline_gbm --city $(or $(city),coimbra) --latest-only
+	$(PY) -m models.evaluate --city $(or $(city),coimbra) --latest-only
+
+alerts:  ## L4: live alert run - latest forecast + guardrails + SHAP + exposure -> alerts table
+	$(PY) -m models.alert_run --city $(or $(city),coimbra)
+
+response-check:  ## L5: MASTERSPEC 9.6 scenario response check -> results/scenario_response_check_<city>.json
+	$(PY) -m models.scenario_response --city $(or $(city),coimbra)
+
 nh-export:  ## P5.1: modelling frame -> NeuralHydrology GenericDataset (data/processed/nh)
 	$(PY) -m pipeline.export_neuralhydrology --city $(or $(city),coimbra)
 
@@ -118,3 +131,9 @@ format:  ## Apply ruff formatting and safe fixes
 
 api:  ## Run the API locally
 	uvicorn api.main:app --reload --port 8000
+
+web-install:  ## Install the frontend's npm dependencies
+	cd frontend && npm install
+
+web:  ## Run the frontend dev server on http://localhost:5173 (proxies /api to make api)
+	cd frontend && npm run dev

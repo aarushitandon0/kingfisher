@@ -6,6 +6,13 @@ every number in it - magnitude, both uncertainty bounds, both cost bounds - is c
 at least one reference's `supports` list. A reference must carry authors, year, title,
 source, a DOI or URL, and a locator saying where in the source the number is.
 
+An intervention may also carry a `direct_effect`: a cited, target-level reduction that the
+scenario engine applies straight to the forecast quantiles when the model fails the
+MASTERSPEC 9.6 response check for the lever's feature (path LITERATURE_DIRECT). It is
+cited under the same rules, with its own claims (direct_magnitude, direct_uncertainty_low,
+direct_uncertainty_high). A lever without one, whose feature the model is not trusted on,
+is reported NOT_ESTIMABLE - nothing is made up in its place.
+
 Validation collects every problem in the file and raises once, so a bad edit shows all of
 its faults, not the first. Load the file through core.config.load_intervention_coefficients.
 """
@@ -17,9 +24,24 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-Claim = Literal["magnitude", "uncertainty_low", "uncertainty_high", "cost_low", "cost_high"]
+Claim = Literal[
+    "magnitude",
+    "uncertainty_low",
+    "uncertainty_high",
+    "cost_low",
+    "cost_high",
+    "direct_magnitude",
+    "direct_uncertainty_low",
+    "direct_uncertainty_high",
+]
 EFFECT_CLAIMS: frozenset[str] = frozenset({"magnitude", "uncertainty_low", "uncertainty_high"})
 COST_CLAIMS: frozenset[str] = frozenset({"cost_low", "cost_high"})
+DIRECT_CLAIMS: frozenset[str] = frozenset(
+    {"direct_magnitude", "direct_uncertainty_low", "direct_uncertainty_high"}
+)
+# Targets a multiplicative quantile scale can reduce. The turbidity index is >= 0; NDCI is
+# signed ([-1, 1]), so scaling it toward zero RAISES a negative value - not a reduction.
+SCALABLE_TARGETS: frozenset[str] = frozenset({"turbidity_proxy"})
 
 
 class UncitedCoefficientError(ValueError):
@@ -84,6 +106,38 @@ class Cost(_Strict):
         return self
 
 
+class DirectEffect(_Strict):
+    """A cited fractional reduction of a forecast target, applied to its quantiles:
+    q_new = q * (1 - magnitude * coverage), coverage in [0, 1] set by the lever's extent."""
+
+    targets: tuple[str, ...] = Field(min_length=1)
+    operation: Literal["scale_quantiles"]
+    unit: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    magnitude: float
+    uncertainty_range: tuple[float, float]
+    citation: tuple[Reference, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> DirectEffect:
+        bad = sorted(set(self.targets) - SCALABLE_TARGETS)
+        if bad:
+            raise ValueError(
+                f"direct_effect cannot scale {bad}: only {sorted(SCALABLE_TARGETS)} are "
+                "non-negative, so a multiplicative scale is a reduction only for them"
+            )
+        low, high = self.uncertainty_range
+        if not low <= self.magnitude <= high:
+            raise ValueError(
+                f"direct_effect uncertainty_range {[low, high]} must bracket magnitude "
+                f"{self.magnitude}"
+            )
+        if not (low >= 0.0 and high <= 1.0):
+            raise ValueError(f"direct_effect takes a fraction in [0, 1], got {[low, high]}")
+        _require_claims(self.citation, DIRECT_CLAIMS, "direct_effect.citation")
+        return self
+
+
 class Intervention(_Strict):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     name: str = Field(min_length=1)
@@ -93,6 +147,7 @@ class Intervention(_Strict):
     citation: tuple[Reference, ...] = Field(min_length=1)
     applies_to: AppliesTo
     cost_per_unit: Cost
+    direct_effect: DirectEffect | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> Intervention:

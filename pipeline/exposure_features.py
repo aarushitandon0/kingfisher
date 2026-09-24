@@ -23,24 +23,16 @@ from shapely import wkt as shapely_wkt
 from shapely.ops import transform as shapely_transform
 
 from core.logging import get_logger, stage
-from core.settings import DATA_DIR
 from engine.exposure import (
     DEFAULT_BUFFER_M,
     PopulationGrid,
     compute_exposure,
     osm_exposure_features,
 )
-from pipeline.l0_network import load_city_config
+from pipeline.l0_network import load_city_config, raw_data_path
 
 log = get_logger(__name__)
 
-OSM_PATH = {"coimbra": DATA_DIR / "raw" / "osm" / "coimbra_overpass.json"}
-GHS_ZIP = {
-    "coimbra": DATA_DIR
-    / "raw"
-    / "population"
-    / "GHS_POP_E2020_GLOBE_R2023A_4326_3ss_V1_0_R5_C18.zip"
-}
 GHS_SOURCE = "GHS-POP E2020 R2023A 3ss (JRC, CC-BY-4.0)"
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
@@ -97,7 +89,7 @@ def load_population(city: str, bbox: dict[str, float], pad_deg: float = 0.05) ->
     import rasterio
     from rasterio.windows import from_bounds
 
-    path = GHS_ZIP[city]
+    path = raw_data_path(load_city_config(city), "population_zip")
     if not path.exists():
         raise FileNotFoundError(f"{path} missing - run scripts/fetch_datasets.py")
     tif = f"/vsizip/{path.as_posix()}/{path.stem}.tif"
@@ -185,7 +177,7 @@ def build(city: str, *, write_db: bool = True) -> dict[str, Any]:
     to_wgs = Transformer.from_crs(metric, "EPSG:4326", always_xy=True).transform
 
     with stage(log, "exposure", city=city) as counters:
-        osm = json.loads(OSM_PATH[city].read_text(encoding="utf-8"))
+        osm = json.loads(raw_data_path(cfg, "osm_overpass").read_text(encoding="utf-8"))
         extra = load_water_access(cfg["bbox"])
         seen = {(e["type"], e["id"]) for e in osm["elements"]}
         elements = osm["elements"] + [e for e in extra if (e["type"], e["id"]) not in seen]

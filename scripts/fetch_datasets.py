@@ -4,6 +4,7 @@
     python scripts/fetch_datasets.py                 # everything open-access
     python scripts/fetch_datasets.py --only osm_coimbra copdem
     python scripts/fetch_datasets.py --skip osm_portugal
+    python scripts/fetch_datasets.py --only pune     # the Pune transfer city's inputs
 
 Everything here is free and needs no credentials. Sources that DO need an account
 (Sentinel-2 via CDSE, CLMS, VIIRS, MERIT Hydro) are listed by `--list` as MANUAL with
@@ -44,9 +45,11 @@ RAW = REPO_ROOT / "data" / "raw"
 INVENTORY = REPO_ROOT / "DATA_INVENTORY.md"
 CHUNK = 1 << 20
 
-# Coimbra study area (config/cities/coimbra.yaml). Kept here as literals so this script
-# stays runnable before the config loader exists.
-BBOX = (-8.5200, 40.1500, -8.3400, 40.2800)  # min_lon, min_lat, max_lon, max_lat
+# Study areas (config/cities/<city>.yaml). Kept here as literals so this script stays
+# runnable before the config loader exists. (min_lon, min_lat, max_lon, max_lat)
+BBOX = (-8.5200, 40.1500, -8.3400, 40.2800)  # Coimbra
+PUNE_BBOX = (73.7300, 18.4400, 73.9600, 18.6400)
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 
 @dataclass
@@ -60,6 +63,8 @@ class Dataset:
     manual: str = ""  # non-empty => needs credentials, cannot be auto-fetched
     notes: str = ""
     tags: list[str] = field(default_factory=list)
+    bbox: tuple[float, float, float, float] = BBOX  # study area the file must serve
+    city: str = "Coimbra"
 
 
 # --------------------------------------------------------------------------
@@ -73,7 +78,7 @@ COPDEM_TILES = [
 ]
 
 
-def _copdem(lat: str, lon: str) -> Dataset:
+def _copdem(lat: str, lon: str, city: str = "Coimbra") -> Dataset:
     name = f"Copernicus_DSM_COG_10_{lat}_00_{lon}_00_DEM"
     return Dataset(
         key=f"copdem_{lat}{lon}".lower(),
@@ -83,7 +88,9 @@ def _copdem(lat: str, lon: str) -> Dataset:
         licence="Copernicus DEM, free and open (ESA/Airbus) - attribution required",
         approx_mb=37,
         notes="Fallback for MERIT Hydro: fill -> flow direction -> accumulation via pysheds.",
-        tags=["copdem", "dem"],
+        tags=["copdem", "dem"] + ([city.lower()] if city != "Coimbra" else []),
+        bbox=PUNE_BBOX if city == "Pune" else BBOX,
+        city=city,
     )
 
 
@@ -91,7 +98,7 @@ DATASETS: list[Dataset] = [
     Dataset(
         key="osm_coimbra",
         description="OSM waterways, roads and exposure features for the Coimbra bbox (Overpass)",
-        url="https://overpass-api.de/api/interpreter",
+        url=OVERPASS_URL,
         dest=RAW / "osm" / "coimbra_overpass.json",
         licence="ODbL - OpenStreetMap contributors (attribution required)",
         approx_mb=25,
@@ -136,6 +143,63 @@ DATASETS: list[Dataset] = [
         approx_mb=98,
         notes="Exposure denominator. Tile bounds are verified after download.",
         tags=["population"],
+    ),
+    # ---- Pune (transfer city): same sources, Indian tiles -------------------------
+    Dataset(
+        key="osm_pune",
+        description="OSM waterways, roads and exposure features for the Pune bbox (Overpass)",
+        url=OVERPASS_URL,
+        dest=RAW / "osm" / "pune_overpass.json",
+        licence="ODbL - OpenStreetMap contributors (attribution required)",
+        approx_mb=40,
+        tags=["osm", "pune"],
+        bbox=PUNE_BBOX,
+        city="Pune",
+    ),
+    Dataset(
+        key="osm_india_western",
+        description="OSM India western zone extract (Geofabrik, western-zone-latest.osm.pbf)",
+        url="https://download.geofabrik.de/asia/india/western-zone-latest.osm.pbf",
+        dest=RAW / "osm" / "india-western-zone-latest.osm.pbf",
+        licence="ODbL - OpenStreetMap contributors (attribution required)",
+        approx_mb=220,
+        notes="Maharashtra is in the western zone; L0 reads Pune's waterways from it.",
+        tags=["osm", "pune"],
+        bbox=PUNE_BBOX,
+        city="Pune",
+    ),
+    _copdem("N18", "E073", city="Pune"),
+    _copdem("N18", "E074", city="Pune"),  # the padded hydro window reaches 74.31 E
+    Dataset(
+        key="worldcover_pune",
+        description="ESA WorldCover 10 m 2021 v200, tile N18E072 (Pune)",
+        url=(
+            "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/"
+            "ESA_WorldCover_10m_2021_v200_N18E072_Map.tif"
+        ),
+        dest=RAW / "landcover" / "ESA_WorldCover_10m_2021_v200_N18E072_Map.tif",
+        licence="CC-BY-4.0 - ESA WorldCover project / Contains modified Copernicus data",
+        approx_mb=126,
+        notes="Pune land-cover adapter (CLMS is EU-only).",
+        tags=["landcover", "pune"],
+        bbox=PUNE_BBOX,
+        city="Pune",
+    ),
+    Dataset(
+        key="ghs_pop_pune",
+        description="GHS-POP 2020, 3 arcsec, tile R8_C26 (western India)",
+        url=(
+            "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_POP_GLOBE_R2023A/"
+            "GHS_POP_E2020_GLOBE_R2023A_4326_3ss/V1-0/tiles/"
+            "GHS_POP_E2020_GLOBE_R2023A_4326_3ss_V1_0_R8_C26.zip"
+        ),
+        dest=RAW / "population" / "GHS_POP_E2020_GLOBE_R2023A_4326_3ss_V1_0_R8_C26.zip",
+        licence="CC-BY-4.0 - European Commission, Joint Research Centre (GHSL)",
+        approx_mb=159,
+        notes="Pune exposure denominator.",
+        tags=["population", "pune"],
+        bbox=PUNE_BBOX,
+        city="Pune",
     ),
 ]
 
@@ -207,16 +271,18 @@ MANUAL: list[Dataset] = [
 ]
 
 # Waterways, roads and the exposure features (DATA_SOURCES.md 1.7) in one Overpass call.
-OVERPASS_QUERY = f"""
+def overpass_query(bbox: tuple[float, float, float, float]) -> str:
+    b = f"{bbox[1]},{bbox[0]},{bbox[3]},{bbox[2]}"
+    return f"""
 [out:json][timeout:180];
 (
-  way["waterway"~"^(river|stream|canal|ditch|drain)$"]({BBOX[1]},{BBOX[0]},{BBOX[3]},{BBOX[2]});
-  way["natural"="water"]({BBOX[1]},{BBOX[0]},{BBOX[3]},{BBOX[2]});
-  way["highway"]({BBOX[1]},{BBOX[0]},{BBOX[3]},{BBOX[2]});
-  node["amenity"~"^(school|kindergarten|hospital|clinic)$"]({BBOX[1]},{BBOX[0]},{BBOX[3]},{BBOX[2]});
-  way["amenity"~"^(school|kindergarten|hospital|clinic)$"]({BBOX[1]},{BBOX[0]},{BBOX[3]},{BBOX[2]});
-  node["leisure"~"^(playground|park|garden|swimming_area)$"]({BBOX[1]},{BBOX[0]},{BBOX[3]},{BBOX[2]});
-  way["leisure"~"^(playground|park|garden|swimming_area)$"]({BBOX[1]},{BBOX[0]},{BBOX[3]},{BBOX[2]});
+  way["waterway"~"^(river|stream|canal|ditch|drain)$"]({b});
+  way["natural"="water"]({b});
+  way["highway"]({b});
+  node["amenity"~"^(school|kindergarten|hospital|clinic)$"]({b});
+  way["amenity"~"^(school|kindergarten|hospital|clinic)$"]({b});
+  node["leisure"~"^(playground|park|garden|swimming_area)$"]({b});
+  way["leisure"~"^(playground|park|garden|swimming_area)$"]({b});
 );
 out body geom;
 """
@@ -232,7 +298,7 @@ def fetch_overpass(dataset: Dataset) -> tuple[bool, str]:
         return True, f"already present ({dataset.dest.stat().st_size / 1e6:.1f} MB)"
     started = time.perf_counter()
     response = requests.post(
-        dataset.url, data={"data": OVERPASS_QUERY}, timeout=300,
+        dataset.url, data={"data": overpass_query(dataset.bbox)}, timeout=300,
         headers={"User-Agent": "kingfisher-hackathon/0.1 (urban stream monitoring)"},
     )
     if response.status_code != 200:
@@ -240,7 +306,7 @@ def fetch_overpass(dataset: Dataset) -> tuple[bool, str]:
     payload = response.json()
     elements = payload.get("elements", [])
     if not elements:
-        raise RuntimeError("Overpass returned zero elements for the Coimbra bbox - "
+        raise RuntimeError(f"Overpass returned zero elements for the {dataset.city} bbox - "
                            "an empty result is a failure, not an empty extract.")
     dataset.dest.write_text(json.dumps(payload), encoding="utf-8")
     waterways = sum(1 for e in elements if e.get("tags", {}).get("waterway"))
@@ -356,7 +422,9 @@ def write_inventory(records: list[dict]) -> None:
     INVENTORY.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def verify_raster_bounds(path: Path) -> str:
+def verify_raster_bounds(
+    path: Path, bbox: tuple[float, float, float, float] = BBOX, city: str = "Coimbra"
+) -> str:
     """Report a raster's bounds so a wrong tile is caught immediately, not on Day 2."""
     try:
         import rasterio
@@ -376,17 +444,17 @@ def verify_raster_bounds(path: Path) -> str:
         with rasterio.open(target) as src:
             b = src.bounds
             covers = (
-                b.left <= BBOX[0] and b.right >= BBOX[2]
-                and b.bottom <= BBOX[1] and b.top >= BBOX[3]
+                b.left <= bbox[0] and b.right >= bbox[2]
+                and b.bottom <= bbox[1] and b.top >= bbox[3]
             )
             intersects = (
-                b.left < BBOX[2] and b.right > BBOX[0]
-                and b.bottom < BBOX[3] and b.top > BBOX[1]
+                b.left < bbox[2] and b.right > bbox[0]
+                and b.bottom < bbox[3] and b.top > bbox[1]
             )
             if covers:
-                verdict = "covers the Coimbra bbox"
+                verdict = f"covers the {city} bbox"
             elif intersects:
-                verdict = "partially covers the Coimbra bbox"
+                verdict = f"partially covers the {city} bbox"
             else:
                 # Neighbouring tiles are deliberate: upstream tracing leaves the bbox.
                 verdict = "adjacent tile (no bbox overlap) - kept for upstream tracing"
@@ -438,13 +506,13 @@ def main() -> int:
         print(f"\n[{index}/{len(selected)}] {dataset.key} - {dataset.description}")
         print(f"      {dataset.url}")
         try:
-            if dataset.key == "osm_coimbra":
+            if dataset.url == OVERPASS_URL:
                 _, message = fetch_overpass(dataset)
             else:
                 _, message = fetch_http(dataset)
             print(f"      OK: {message}")
             if dataset.dest.suffix in {".tif", ".zip"}:
-                detail = verify_raster_bounds(dataset.dest)
+                detail = verify_raster_bounds(dataset.dest, dataset.bbox, dataset.city)
                 if detail:
                     print(f"    {detail}")
             records.append(
