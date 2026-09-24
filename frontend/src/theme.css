@@ -1,120 +1,160 @@
 /* Kingfisher theme - every colour, shadow and ramp in one place.
    The palette is the bird: cobalt back (brand), burnt-orange breast (severity only).
    Hex twins of these values for MapLibre (which cannot read CSS variables) live in
-   src/lib/ramp.ts PALETTE; keep the two in step. */
+   src/lib/ramp.ts PALETTE; keep the two in step.
 
+   Three distinct darkness steps that must never collapse into one another:
+   chrome (page, nav) < surface (cards) < map (a navy, not black). The map is the only
+   place water is drawn, so it gets its own ground and a visible frame. */
+
+/* Dark is the default; light is opt-in via the toggle (data-theme="light"). */
 :root {
-  /* Base */
-  --bg: #fafaf8;
-  --surface: #ffffff;
-  --surface-sunken: #f2f1ed;
-  --border: #e4e2dc;
-  --text-primary: #1b1d22;
-  --text-secondary: #5d6068;
-  --text-tertiary: #90939b;
+  --chrome-bg: #0b0d11;
+  --bg: var(--chrome-bg);
+  --surface: #12151b;
+  --surface-raised: #181c24;
+  --surface-sunken: #181c24; /* hover / recessed rows inside a card */
+  --border: #262b34;
+  --border-strong: #363c47;
 
-  /* Brand - kingfisher blue: actions, active nav, links, focus, forecast marks */
-  --brand-50: #eef6fc;
-  --brand-500: #1c6fa8;
-  --brand-700: #0f4c79;
-  --on-brand: #ffffff;
-
-  /* Severity - kingfisher breast orange, reserved for severity */
-  --severity-critical: #c6432b;
-  --severity-watch: #d98c2b;
-  --severity-insufficient: #9a9ca3;
-  --severity-ok: #2e7d5b;
-  /* Text-safe (>= 4.5:1 on surface) twins for pill and label text */
-  --severity-critical-text: #a83523;
-  --severity-watch-text: #8f5510;
-  --severity-insufficient-text: #62656d;
-
-  /* Scenario "after" state */
-  --scenario: #2e7d5b;
-
-  /* Exceedance ramp, low -> high */
-  --exceed-0: #cbd9e6;
-  --exceed-1: #8fb7d6;
-  --exceed-2: #e8b24a;
-  --exceed-3: #d9772e;
-  --exceed-4: #b8331f;
-
-  /* Hatching (insufficient evidence) */
-  --hatch-ink: #7d7f86;
-  --hatch-bg: #e6e6e3;
-
-  /* Elevation */
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.03);
-  --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-
-  --map-icon-filter: none;
-  color-scheme: light;
-}
-
-/* Dark: the system preference, unless the page is pinned to light. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #14161a;
-    --surface: #1c1f25;
-    --surface-sunken: #101215;
-    --border: #2a2d34;
-    --text-primary: #f2f2f0;
-    --text-secondary: #a7aab2;
-    --text-tertiary: #767a83;
-    --brand-50: #16263a;
-    --brand-500: #4fa3dc;
-    --brand-700: #7cbce8;
-    --on-brand: #0b1622;
-    --severity-critical: #e8503a;
-    --severity-watch: #e59a3c;
-    --severity-insufficient: #80838b;
-    --severity-ok: #4caf82;
-    --severity-critical-text: #f07a66;
-    --severity-watch-text: #efb164;
-    --severity-insufficient-text: #a7aab2;
-    --scenario: #4caf82;
-    --exceed-0: #3a5068;
-    --exceed-1: #5e93bf;
-    --exceed-2: #e8b24a;
-    --exceed-3: #e0833a;
-    --exceed-4: #e8503a;
-    --hatch-ink: #8a8d95;
-    --hatch-bg: #2a2d34;
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.25);
-    --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
-    --map-icon-filter: invert(1);
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #14161a;
-  --surface: #1c1f25;
-  --surface-sunken: #101215;
-  --border: #2a2d34;
   --text-primary: #f2f2f0;
   --text-secondary: #a7aab2;
-  --text-tertiary: #767a83;
-  --brand-50: #16263a;
-  --brand-500: #4fa3dc;
-  --brand-700: #7cbce8;
-  --on-brand: #0b1622;
-  --severity-critical: #e8503a;
-  --severity-watch: #e59a3c;
-  --severity-insufficient: #80838b;
-  --severity-ok: #4caf82;
-  --severity-critical-text: #f07a66;
-  --severity-watch-text: #efb164;
-  --severity-insufficient-text: #a7aab2;
-  --scenario: #4caf82;
-  --exceed-0: #3a5068;
-  --exceed-1: #5e93bf;
-  --exceed-2: #e8b24a;
-  --exceed-3: #e0833a;
+  --text-tertiary: #7c7f87;
+  --on-brand: #ffffff;
+
+  /* Brand - kingfisher blue: actions, active nav, links, focus */
+  --brand-50: rgba(46, 143, 214, 0.12);
+  --brand-300: #6fb8e8;
+  --brand-500: #2e8fd6;
+  --brand-700: #1c6fa8;
+  --brand-900: #0f4c79;
+  --brand-text: #6fb8e8;
+
+  /* Map */
+  --map-bg: #142235;
+  --map-land: #111c2a;
+  --map-water: #2fa8e0;
+  --map-water-dim: #4a6b85;
+  --map-line-neutral: #3a4552;
+
+  /* Severity - kingfisher breast orange/rust, reserved for severity */
+  --severity-critical: #e85d3d;
+  --severity-watch: #e8a33d;
+  --severity-insufficient: #7c7f87;
+  --severity-ok: #3fae7e;
+  --severity-critical-bg: rgba(232, 93, 61, 0.14);
+  --severity-watch-bg: rgba(232, 163, 61, 0.14);
+  --severity-insufficient-bg: rgba(124, 127, 135, 0.16);
+  --severity-ok-bg: rgba(63, 174, 126, 0.14);
+  /* Text-safe (>= 4.5:1 on their own -bg tint over --surface) */
+  --severity-critical-text: #f58a70;
+  --severity-watch-text: #f0b862;
+  --severity-insufficient-text: #b4b7bf;
+  --severity-ok-text: #6fd0a3;
+
+  --scenario: #3fae7e;
+
+  /* Exceedance ramp, low -> high: clear water to silt-laden water */
+  --exceed-0: #2fa8e0;
+  --exceed-1: #8db9c9;
+  --exceed-2: #e0b24a;
+  --exceed-3: #e8823a;
   --exceed-4: #e8503a;
+
+  /* Diverging change scale (scenario Change map): cool = improved, warm = worsened */
+  --change-improve-strong: #2e9e6b;
+  --change-improve: #6fc79e;
+  --change-neutral: #565b64;
+  --change-worsen: #e0975a;
+  --change-worsen-strong: #e0573a;
+
+  /* Hatching (insufficient evidence) */
   --hatch-ink: #8a8d95;
-  --hatch-bg: #2a2d34;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.25);
-  --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --hatch-bg: #20242c;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.32);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.44);
+  --ring-map: 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --shadow-card: var(--shadow-sm);
+  --shadow-float: var(--shadow-md);
+  --panel-glass: rgba(18, 21, 27, 0.92);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --focus-ring: #6fb8e8;
+  --scrim: rgba(0, 0, 0, 0.55);
   --map-icon-filter: invert(1);
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --chrome-bg: #eceff3;
+  --surface: #ffffff;
+  --surface-raised: #f4f6f9;
+  --surface-sunken: #f1f3f6;
+  --border: #dde2e8;
+  --border-strong: #c9d0d8;
+
+  --text-primary: #161a20;
+  --text-secondary: #525862;
+  --text-tertiary: #7a808a;
+  --on-brand: #ffffff;
+
+  --brand-50: rgba(28, 111, 168, 0.1);
+  --brand-300: #4a9bd4;
+  --brand-500: #1c6fa8;
+  --brand-700: #0f4c79;
+  --brand-900: #0a3656;
+  --brand-text: #1c6fa8;
+
+  --map-bg: #d9e4ee;
+  --map-land: #e6ecf1;
+  --map-water: #1583c4;
+  --map-water-dim: #8eaec6;
+  --map-line-neutral: #c3ccd6;
+
+  --severity-critical: #c6432b;
+  --severity-watch: #d98c2b;
+  --severity-insufficient: #8d9098;
+  --severity-ok: #2e7d5b;
+  --severity-critical-bg: rgba(198, 67, 43, 0.1);
+  --severity-watch-bg: rgba(217, 140, 43, 0.14);
+  --severity-insufficient-bg: rgba(141, 144, 152, 0.16);
+  --severity-ok-bg: rgba(46, 125, 91, 0.1);
+  --severity-critical-text: #a83523;
+  --severity-watch-text: #8a520e;
+  --severity-insufficient-text: #555962;
+  --severity-ok-text: #1f6a4a;
+
+  --scenario: #2e7d5b;
+
+  --exceed-0: #1583c4;
+  --exceed-1: #7fa6bd;
+  --exceed-2: #dca23a;
+  --exceed-3: #d9702a;
+  --exceed-4: #bf321f;
+
+  --change-improve-strong: #1f7f54;
+  --change-improve: #52b085;
+  --change-neutral: #9aa0a8;
+  --change-worsen: #d9844a;
+  --change-worsen-strong: #c2412a;
+
+  --hatch-ink: #7d7f86;
+  --hatch-bg: #e6e8ec;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 16px rgba(16, 24, 40, 0.1);
+  --shadow-lg: 0 8px 32px rgba(16, 24, 40, 0.14);
+  --ring-map: 0 0 0 1px rgba(16, 24, 40, 0.1);
+  --panel-glass: rgba(255, 255, 255, 0.94);
+
+  --focus-ring: #1c6fa8;
+  --scrim: rgba(16, 24, 40, 0.35);
+  --map-icon-filter: none;
+  color-scheme: light;
 }

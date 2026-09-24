@@ -256,6 +256,9 @@ Day 8  — [~] frontend: scenarios, validation, Pune        ← feature freeze 1
            or metrics. So Pune's scenarios/validation/priorities 503/404 and its map has no
            forecast. Needs: make l2 static exposure dataset train evaluate response-check
            live-weather forecasts-latest alerts city=pune.
+           [x] UI round 2 (25 Sep): dark-first, framed navy map, water-first basemap (no
+           hillshade), map search + reset view, dashboard grids on Alerts/Validation,
+           scenario Change map (Δ≈0 shown on the map). Rules in design.md "Round 2".
 Day 9  — [ ] docs, FHIR, deploy
 Day 10 — [ ] video, SUBMIT
 ```

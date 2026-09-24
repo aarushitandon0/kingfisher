@@ -5,7 +5,9 @@
    muted, hairline, kf) are kept so components did not have to be rewritten. */
 @theme {
   --color-bg: var(--bg);
+  --color-chrome: var(--chrome-bg);
   --color-surface: var(--surface);
+  --color-raised: var(--surface-raised);
   --color-sunken: var(--surface-sunken);
   --color-paper: var(--surface);
   --color-paper-alt: var(--surface-sunken);
@@ -13,15 +15,21 @@
   --color-muted: var(--text-secondary);
   --color-faint: var(--text-tertiary);
   --color-hairline: var(--border);
-  --color-kf: var(--brand-500);
+  --color-hairline-strong: var(--border-strong);
+  --color-kf: var(--brand-text);
   --color-brand: var(--brand-500);
+  --color-brand-text: var(--brand-text);
+  --color-brand-300: var(--brand-300);
   --color-brand-700: var(--brand-700);
   --color-brand-50: var(--brand-50);
   --color-alert: var(--severity-critical-text);
   --color-watch: var(--severity-watch);
   --color-watch-text: var(--severity-watch-text);
+  --color-ok: var(--severity-ok-text);
   --color-unknown: var(--severity-insufficient);
   --color-scenario: var(--scenario);
+  --color-map: var(--map-bg);
+  --color-water: var(--map-water);
   --color-clear: var(--exceed-0);
   --color-slight: var(--exceed-1);
   --color-turbid: var(--exceed-2);
@@ -51,10 +59,10 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--chrome-bg);
   color: var(--text-primary);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
@@ -66,15 +74,23 @@ body {
   font-family: var(--font-display);
   font-size: 34px;
   line-height: 40px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.025em;
 }
 .t-title {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 22px;
   line-height: 28px;
   font-weight: 600;
   letter-spacing: -0.015em;
+}
+.t-h3 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
 }
 .t-body {
   font-size: 15px;
@@ -82,7 +98,7 @@ body {
   font-weight: 400;
 }
 .t-ui {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
   font-weight: 400;
 }
@@ -91,14 +107,22 @@ body {
   line-height: 16px;
   font-weight: 400;
 }
-/* Eyebrow: section labels inside panels. */
+/* Eyebrow: small uppercase labels (table headers, stat labels) - never card titles. */
 .t-eyebrow {
   font-size: 11px;
-  line-height: 16px;
+  line-height: 14px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-tertiary);
+}
+/* Big stat-tile numbers. */
+.t-stat {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 /* Mono is for measured or computed values only - never labels. */
 .t-reading {
@@ -116,10 +140,12 @@ body {
 }
 .t-value-sm {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 16px;
+  font-weight: 500;
 }
 .t-reading,
+.t-stat,
 .t-value,
 .t-value-sm,
 table,
@@ -128,7 +154,7 @@ table,
 }
 
 :focus-visible {
-  outline: 2px solid var(--brand-500);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -169,7 +195,13 @@ button:disabled {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--brand-500) 22%, transparent);
+  background: color-mix(in srgb, var(--brand-500) 30%, transparent);
+}
+
+/* Scrollbars that belong to a dark UI. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 /* Brand checkbox: drawn, not the browser default. */
@@ -180,9 +212,9 @@ input[type="checkbox"] {
   width: 16px;
   height: 16px;
   margin: 0;
-  border: 1.5px solid var(--text-tertiary);
+  border: 2px solid var(--border-strong);
   border-radius: 4px;
-  background: var(--surface);
+  background: transparent;
   cursor: pointer;
   transition:
     background-color 100ms ease,
@@ -190,8 +222,8 @@ input[type="checkbox"] {
 }
 input[type="checkbox"]::after {
   content: "";
-  width: 9px;
-  height: 5px;
+  width: 8px;
+  height: 4.5px;
   border-left: 2px solid #fff;
   border-bottom: 2px solid #fff;
   transform: translateY(-1px) rotate(-45deg) scale(0);
@@ -212,8 +244,47 @@ input[type="checkbox"]:disabled {
   cursor: not-allowed;
 }
 
+/* Slider: 4px track, brand fill up to the thumb (--fill set inline), 16px white thumb. */
 input[type="range"] {
-  accent-color: var(--brand-500);
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--brand-500) var(--fill, 50%), var(--border-strong) var(--fill, 50%));
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--brand-500) var(--fill, 50%), var(--border-strong) var(--fill, 50%));
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: var(--shadow-sm), 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+}
+input[type="range"]:focus-visible::-webkit-slider-thumb,
+input[type="range"]:active::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--brand-500);
+}
+input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 select {
@@ -221,7 +292,7 @@ select {
   color: var(--text-primary);
 }
 select option {
-  background: var(--surface);
+  background: var(--surface-raised);
   color: var(--text-primary);
 }
 
@@ -232,22 +303,42 @@ summary,
 .ctl {
   transition:
     color 120ms ease,
-    background-color 120ms ease,
+    background-color 150ms ease,
     border-color 120ms ease,
     box-shadow 120ms ease,
     opacity 120ms ease;
 }
 
 @layer components {
+  /* ---- Page shell -------------------------------------------------------------------- */
+  .page {
+    padding: 24px 16px 48px;
+  }
+  @media (min-width: 1024px) {
+    .page {
+      padding: 32px 32px 56px;
+    }
+  }
+
   /* ---- Surfaces ---------------------------------------------------------------------- */
   /* Elevated panels carry a shadow, not a border. Borders are for same-plane dividers. */
   .card {
     background: var(--surface);
-    border-radius: 10px;
-    box-shadow: var(--shadow-card);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm), inset 0 0 0 1px color-mix(in srgb, var(--border) 60%, transparent);
   }
   .card-pad {
-    padding: 16px 20px 20px;
+    padding: 20px;
+  }
+  /* The map's frame: its own navy ground, a hairline ring and a deep shadow, so it never
+     bleeds into the near-black chrome around it. */
+  .map-frame {
+    position: relative;
+    overflow: hidden;
+    background: var(--map-bg);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--ring-map), var(--shadow-lg);
+    isolation: isolate;
   }
 
   /* ---- Controls ---------------------------------------------------------------------- */
@@ -256,11 +347,11 @@ summary,
     align-items: center;
     justify-content: center;
     gap: 6px;
-    height: 32px;
-    padding: 0 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface);
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
     color: var(--text-primary);
     font-size: 13px;
     line-height: 20px;
@@ -268,31 +359,33 @@ summary,
     white-space: nowrap;
   }
   .btn:hover:not(:disabled) {
-    border-color: var(--text-tertiary);
-    background: var(--surface-sunken);
+    border-color: var(--brand-500);
   }
   .btn:disabled {
     opacity: 0.4;
   }
   .btn-sm {
-    height: 28px;
-    padding: 0 8px;
+    height: 30px;
+    padding: 0 10px;
     font-size: 12px;
     line-height: 16px;
+    border-radius: var(--radius-sm);
   }
   .btn-primary {
     background: var(--brand-500);
     border-color: var(--brand-500);
     color: var(--on-brand);
     font-weight: 600;
+    padding: 0 20px;
   }
   .btn-primary:hover:not(:disabled) {
     background: var(--brand-700);
     border-color: var(--brand-700);
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--brand-500) 35%, transparent);
+    box-shadow: var(--shadow-md);
   }
   .btn-primary:disabled {
     opacity: 0.4;
+    box-shadow: none;
   }
   .btn-ghost {
     border-color: transparent;
@@ -301,11 +394,15 @@ summary,
   }
   .btn-ghost:hover:not(:disabled) {
     border-color: transparent;
-    background: var(--surface-sunken);
+    background: var(--surface-raised);
     color: var(--text-primary);
   }
+  .btn-icon {
+    width: 36px;
+    padding: 0;
+  }
   .link {
-    color: var(--brand-500);
+    color: var(--brand-text);
     text-decoration: underline;
     text-underline-offset: 2px;
     text-decoration-thickness: 1px;
@@ -313,13 +410,64 @@ summary,
   .link:hover {
     text-decoration-thickness: 2px;
   }
+  .text-link {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+  .text-link:hover:not(:disabled) {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .text-link-danger:hover:not(:disabled) {
+    color: var(--severity-critical-text);
+  }
 
-  /* Floating panels on the map. */
+  /* Floating panels on the map: glass + blur + shadow separates them from the terrain. */
   .map-panel {
-    background: color-mix(in srgb, var(--surface) 96%, transparent);
-    border-radius: 8px;
-    box-shadow: var(--shadow-float);
-    backdrop-filter: blur(4px);
+    background: var(--panel-glass);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md), inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Search box. */
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 0 10px 0 12px;
+    border-radius: 999px;
+    background: var(--surface-raised);
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+    color: var(--text-secondary);
+  }
+  .search:focus-within {
+    box-shadow: inset 0 0 0 1.5px var(--brand-500);
+  }
+  .search input {
+    min-width: 0;
+    flex: 1;
+    background: transparent;
+    outline: none;
+    color: var(--text-primary);
+    font-size: 13px;
+  }
+  .search input,
+  .search input:focus-visible {
+    appearance: none;
+    border: 0;
+    outline: none;
+    box-shadow: none;
+  }
+  .search input::-webkit-search-cancel-button,
+  .search input::-webkit-search-decoration {
+    appearance: none;
+    display: none;
+  }
+  .search input::placeholder {
+    color: var(--text-tertiary);
   }
 
   /* Severity pills: severity is the point of the product, so it gets real weight. */
@@ -327,7 +475,7 @@ summary,
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 2px 10px;
+    padding: 4px 10px;
     border-radius: 999px;
     font-size: 12px;
     line-height: 16px;
@@ -342,33 +490,93 @@ summary,
     background: currentColor;
   }
   .pill-sm {
-    padding: 1px 8px;
+    padding: 2px 8px;
     font-size: 11px;
   }
   .pill-alert {
     color: var(--severity-critical-text);
-    background: color-mix(in srgb, var(--severity-critical) 12%, transparent);
+    background: var(--severity-critical-bg);
   }
   .pill-watch {
     color: var(--severity-watch-text);
-    background: color-mix(in srgb, var(--severity-watch) 16%, transparent);
+    background: var(--severity-watch-bg);
   }
   .pill-insufficient {
     color: var(--severity-insufficient-text);
-    background: color-mix(in srgb, var(--severity-insufficient) 16%, transparent);
+    background: var(--severity-insufficient-bg);
   }
   .pill-ok {
-    color: var(--severity-ok);
-    background: color-mix(in srgb, var(--severity-ok) 12%, transparent);
+    color: var(--severity-ok-text);
+    background: var(--severity-ok-bg);
   }
   .pill-brand {
-    color: var(--brand-500);
-    background: color-mix(in srgb, var(--brand-500) 12%, transparent);
+    color: var(--brand-text);
+    background: var(--brand-50);
+  }
+  /* Informational, not a severity: no dot, neutral ground. */
+  .pill-neutral {
+    color: var(--text-secondary);
+    background: var(--surface-raised);
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .pill-neutral::before {
+    display: none;
+  }
+
+  /* Data tables (§6.5): eyebrow sticky header on a raised band, hairline rows. */
+  .dtable {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .dtable thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface-raised);
+    font-size: 11px;
+    line-height: 14px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding-top: 10px;
+    padding-bottom: 10px;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  .dtable thead th:first-child {
+    border-top-left-radius: var(--radius-sm);
+  }
+  .dtable thead th:last-child {
+    border-top-right-radius: var(--radius-sm);
+  }
+  .dtable tbody td {
+    border-bottom: 1px solid var(--border);
+    padding-top: 8px;
+    padding-bottom: 8px;
+    vertical-align: middle;
+  }
+  .dtable :is(th, td):first-child {
+    padding-left: 16px;
+  }
+  .dtable :is(th, td):last-child {
+    padding-right: 16px;
+  }
+  .dtable .num {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+  }
+  .dtable tr.row-total td {
+    background: var(--surface-raised);
+    font-weight: 600;
   }
 
   /* Inactive nav tabs: a tint on hover. */
   button:hover > .hover-tint {
-    background: var(--surface-sunken);
+    background: var(--surface-raised);
   }
 
   /* Table rows answer the pointer. */
@@ -376,7 +584,7 @@ summary,
     transition: background-color 100ms ease;
   }
   .row-hover:hover {
-    background: var(--surface-sunken);
+    background: var(--surface-raised);
   }
 }
 
@@ -416,24 +624,43 @@ summary,
   }
 }
 
-/* The alert pin's halo: pulses twice, then settles to a static ring. */
+/* The drawer (alert details): slides in from the right over a scrim. */
+.drawer {
+  animation: drawer-in 180ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+.scrim {
+  animation: fade-in 150ms ease-out backwards;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The alert pin's halo: pulses three times, then settles to a static ring. */
 .kf-pulse {
   width: 12px;
   height: 12px;
   border-radius: 999px;
   pointer-events: none;
-  box-shadow: 0 0 0 6px color-mix(in srgb, var(--severity-critical) 22%, transparent);
-  animation: kf-pulse 1.6s ease-out 2;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--severity-critical) 40%, transparent);
+  animation: kf-pulse 1.8s ease-out 3;
 }
 @keyframes kf-pulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--severity-critical) 55%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--severity-critical) 65%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 16px color-mix(in srgb, var(--severity-critical) 0%, transparent);
+    box-shadow: 0 0 0 18px color-mix(in srgb, var(--severity-critical) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 6px color-mix(in srgb, var(--severity-critical) 22%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--severity-critical) 40%, transparent);
   }
 }
 
@@ -458,23 +685,13 @@ summary::-webkit-details-marker {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  button,
-  a,
-  summary,
-  .btn,
-  .ctl,
-  .chev,
-  .row-hover,
-  .bar-descend,
-  input[type="checkbox"] {
-    transition: none;
-  }
-  .enter,
-  .kf-pulse {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
   }
   .progress::after {
-    animation: none;
     width: 100%;
     opacity: 0.5;
   }
@@ -482,10 +699,15 @@ summary::-webkit-details-marker {
 
 /* MapLibre chrome, matched to the panels. */
 .maplibregl-ctrl-group {
-  border-radius: 8px !important;
-  box-shadow: var(--shadow-float) !important;
-  background: var(--surface) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-md), inset 0 0 0 1px var(--border) !important;
+  background: var(--panel-glass) !important;
+  backdrop-filter: blur(8px);
   overflow: hidden;
+}
+.maplibregl-ctrl-group button {
+  width: 36px !important;
+  height: 36px !important;
 }
 .maplibregl-ctrl-group button + button {
   border-top: 1px solid var(--border) !important;
@@ -493,13 +715,27 @@ summary::-webkit-details-marker {
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
   filter: var(--map-icon-filter);
 }
+.maplibregl-ctrl-group button:hover {
+  background: var(--surface-raised) !important;
+}
+.kf-reset {
+  display: grid !important;
+  place-items: center;
+  color: var(--text-primary);
+}
+.maplibregl-ctrl-top-right .maplibregl-ctrl {
+  margin: 12px 12px 0 0 !important;
+}
+.maplibregl-ctrl-top-right .maplibregl-ctrl + .maplibregl-ctrl {
+  margin-top: 8px !important;
+}
 .maplibregl-ctrl-attrib {
-  background: color-mix(in srgb, var(--surface) 85%, transparent) !important;
+  background: color-mix(in srgb, var(--surface) 80%, transparent) !important;
   font-size: 10px;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
 }
 .maplibregl-ctrl-attrib a {
-  color: var(--text-secondary) !important;
+  color: var(--text-tertiary) !important;
 }
 .maplibregl-ctrl-attrib-button {
   filter: var(--map-icon-filter);
@@ -512,10 +748,10 @@ summary::-webkit-details-marker {
   font-size: 10px;
 }
 .maplibregl-popup-content {
-  border-radius: 8px !important;
-  box-shadow: var(--shadow-float) !important;
-  background: var(--surface) !important;
-  padding: 6px 10px !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--shadow-md) !important;
+  background: var(--surface-raised) !important;
+  padding: 8px 12px !important;
   font-family: var(--font-sans);
   font-size: 12px;
   line-height: 16px;

@@ -20,7 +20,7 @@ function ThemeToggle() {
     <button
       type="button"
       onClick={() => setTheme(next)}
-      className="btn btn-ghost btn-sm h-8 w-8 px-0"
+      className="btn btn-ghost btn-icon"
       aria-label={`Switch to ${next} theme`}
       title={`Switch to ${next} theme`}
     >
@@ -38,33 +38,45 @@ function ThemeToggle() {
   );
 }
 
+const ICONS: Record<string, string> = {
+  map: "M1.5 3.5 5.5 2l5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z M5.5 2v10.5 M10.5 3.5V14",
+  alerts: "M8 2.2 14.3 13.3H1.7z M8 6.5v3 M8 11.3v.1",
+  scenarios: "M2 12.5c2.5-4 4.5-4 6 0s3.5 4 6 0 M2 5.5h5 M11 5.5h3 M9 3.5v4",
+  validation: "M2 14h12 M4 14V9 M8 14V4 M12 14V7",
+};
+
 export function TopBar({ cities }: { cities: City[] | null }) {
   const { view, city, setView, setCity } = useStore();
   const current = cities?.find((c) => c.city === city);
   return (
-    <header className="relative z-30 flex shrink-0 flex-col border-b border-hairline bg-surface md:h-14 md:flex-row md:items-stretch">
-      <div className="flex h-12 min-w-0 items-center gap-3 px-4 md:h-auto">
+    <header className="relative z-30 flex shrink-0 flex-col border-b border-hairline bg-chrome md:h-16 md:flex-row md:items-stretch">
+      <div className="flex h-14 min-w-0 items-center gap-3 px-4 md:h-auto md:px-6">
         <span className="flex items-center gap-2.5">
           <Mark />
-          <span className="font-display text-[19px] leading-6 font-semibold tracking-[-0.02em]">Kingfisher</span>
+          <span className="t-h3 text-[17px]">Kingfisher</span>
         </span>
-        <span aria-hidden className="h-5 w-px bg-hairline" />
+        <span aria-hidden className="mx-1 h-6 w-px bg-hairline" />
         <label className="sr-only" htmlFor="city">
           City
         </label>
-        <select
-          id="city"
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-          className="t-ui ctl h-8 max-w-[11rem] rounded-md border border-transparent bg-transparent pr-1 pl-1.5 font-medium text-ink hover:border-hairline hover:bg-paper-alt"
-        >
-          {(cities ?? [{ city, name: city } as City]).map((c) => (
-            <option key={c.city} value={c.city}>
-              {c.name}
-              {c.status === "NOT_BUILT" ? " (not built)" : ""}
-            </option>
-          ))}
-        </select>
+        <span className="relative inline-flex items-center">
+          <select
+            id="city"
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            className="ctl h-9 max-w-[12rem] appearance-none rounded-[var(--radius-md)] border border-hairline bg-surface pr-8 pl-3 text-[13px] font-semibold text-ink hover:border-hairline-strong hover:bg-raised"
+          >
+            {(cities ?? [{ city, name: city } as City]).map((c) => (
+              <option key={c.city} value={c.city}>
+                {c.name}
+                {c.status === "NOT_BUILT" ? " (not built)" : ""}
+              </option>
+            ))}
+          </select>
+          <svg aria-hidden viewBox="0 0 12 12" width="12" height="12" className="pointer-events-none absolute right-3 text-muted">
+            <path d="M3 4.5 6 7.5l3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </span>
         {current && current.status === "READY" && (
           <span className="t-dense hidden truncate text-muted lg:inline">
             <span className="t-value-sm text-ink">{current.reaches}</span> reaches, <span className="t-value-sm text-ink">{current.optically_observable}</span> optically observable
@@ -74,20 +86,38 @@ export function TopBar({ cities }: { cities: City[] | null }) {
           <ThemeToggle />
         </span>
       </div>
-      <nav className="flex h-11 items-stretch gap-1 border-t border-hairline px-2 md:ml-auto md:h-auto md:border-t-0" aria-label="Views">
-        {VIEWS.map((v) => (
+      <nav className="flex h-12 items-stretch gap-1 overflow-x-auto border-t border-hairline px-2 md:ml-auto md:h-auto md:gap-6 md:border-t-0 md:px-6" aria-label="Views">
+        {VIEWS.map((v) => {
+          const on = view === v.id;
+          return (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => setView(v.id)}
+              aria-current={on ? "page" : undefined}
+              className={`relative flex flex-1 items-center justify-center gap-2 px-2 text-[14px] font-medium md:flex-none ${on ? "text-brand-300" : "text-muted hover:text-ink"}`}
+            >
+              <svg aria-hidden viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d={ICONS[v.id]} />
+              </svg>
+              {v.label}
+              <span aria-hidden className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full ${on ? "bg-brand" : "bg-transparent"}`} />
+            </button>
+          );
+        })}
+        <span className="hidden items-center gap-1 pl-2 md:flex">
           <button
-            key={v.id}
             type="button"
-            onClick={() => setView(v.id)}
-            aria-current={view === v.id ? "page" : undefined}
-            className={`t-ui relative flex-1 px-3 font-medium md:flex-none ${view === v.id ? "text-brand" : "text-muted hover:text-ink"}`}
+            onClick={() => window.dispatchEvent(new Event("kf:shortcuts"))}
+            className="btn btn-ghost btn-icon"
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
           >
-            <span className={`rounded-md px-2 py-1.5 ${view === v.id ? "" : "hover-tint"}`}>{v.label}</span>
-            <span aria-hidden className={`absolute inset-x-2 -bottom-px h-0.5 rounded-full ${view === v.id ? "bg-brand" : "bg-transparent"}`} />
+            <svg aria-hidden viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+              <path d="M4 6.5h.01M6.5 6.5h.01M9 6.5h.01M11.5 6.5h.01M4.5 9.5h7" />
+            </svg>
           </button>
-        ))}
-        <span className="hidden items-center pl-2 md:flex">
           <ThemeToggle />
         </span>
       </nav>

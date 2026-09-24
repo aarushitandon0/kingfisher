@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { api } from "./api/client";
 import { ErrorNote, Loading } from "./components/bits";
+import { Shortcuts } from "./components/Shortcuts";
 import { TopBar } from "./components/TopBar";
 import { buildIndex } from "./lib/timeline";
 import { useApi } from "./lib/useApi";
@@ -28,6 +29,7 @@ export function App() {
         Skip to content
       </a>
       <TopBar cities={cities.data} />
+      <Shortcuts />
       {/* Phones: the page scrolls as one column. From 768px: fixed panes, each scrolls itself. */}
       <main id="main" className="flex min-h-0 flex-1 flex-col overflow-y-auto md:overflow-hidden">
         {cities.loading && <Loading what="cities" className="m-6" />}
@@ -41,7 +43,7 @@ export function App() {
           // Keyed by view: a route change replays the short entrance.
           <div key={view} className="enter flex flex-1 flex-col md:min-h-0">
             {view === "map" && <MapView key={city} city={current} reaches={reaches} timeline={timeline} />}
-            {view === "alerts" && <AlertsView key={city} city={city} />}
+            {view === "alerts" && <AlertsView key={city} city={city} reaches={reaches} />}
             {view === "scenarios" && (built ? <ScenarioView key={city} city={city} reaches={reaches} /> : <NotBuilt name={current.name} city={city} />)}
             {view === "validation" && <ValidationView key={city} city={city} />}
           </div>

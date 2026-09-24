@@ -9,7 +9,7 @@ import { api } from "../api/client";
 import type { CatchmentFeature, ExposureLayer, ReachCollection, ReachFeature } from "../api/types";
 import { Loading } from "../components/bits";
 import { cached } from "../lib/useApi";
-import { PALETTE, rampExpression, widthExpression, type Palette } from "../lib/ramp";
+import { NEGLIGIBLE_DAYS, PALETTE, rampExpression, widthExpression, type Palette, type Scheme } from "../lib/ramp";
 import { useTheme } from "../lib/theme";
 import { basemapStyle, hatchImage } from "./basemap";
 
@@ -23,6 +23,9 @@ export interface ReachMapProps {
   /** Per-reach value to colour by. Missing / null -> hatched "no value" state. */
   values: Map<string, ReachValue>;
   breaks: number[];
+  /** "exceed": the sequential exceedance ramp. "change": the diverging scenario-change
+   * scale; |value| below NEGLIGIBLE_DAYS is drawn as an explicit "negligible" state. */
+  scheme?: Scheme;
   /** Number format for the soundings set along each reach. */
   sounding: (v: number) => string;
   highlighted?: string[]; // scenario selection
@@ -57,7 +60,12 @@ function downstreamEnd(f: ReachFeature): [number, number] | null {
   return null;
 }
 
-function bounds(fc: ReachCollection): maplibregl.LngLatBounds | null {
+/** Bounds of one reach, for fly-to. */
+export function featureBounds(f: ReachFeature): maplibregl.LngLatBounds | null {
+  return bounds({ features: [f] });
+}
+
+function bounds(fc: Pick<ReachCollection, "features">): maplibregl.LngLatBounds | null {
   const b = new maplibregl.LngLatBounds();
   let any = false;
   const add = (c: unknown) => {
@@ -76,6 +84,8 @@ function reachData(p: ReachMapProps): GeoJSON.FeatureCollection {
     features: p.reaches.features.map((f) => {
       const v = p.values.get(f.id);
       const value = v?.value ?? null;
+      const has = value !== null && Number.isFinite(value);
+      const negligible = p.scheme === "change" && has && Math.abs(value) < NEGLIGIBLE_DAYS;
       return {
         type: "Feature",
         id: f.id,
@@ -85,8 +95,9 @@ function reachData(p: ReachMapProps): GeoJSON.FeatureCollection {
           name: f.properties.name ?? "",
           observable: f.properties.observable === true,
           value,
-          has_value: value !== null && Number.isFinite(value),
-          sounding: value !== null && Number.isFinite(value) ? p.sounding(value) : "",
+          has_value: has,
+          negligible,
+          sounding: has ? p.sounding(value) : "",
           spread: v?.spread ?? 0,
           faded: p.visible ? !p.visible.has(f.id) : false,
           highlighted: p.highlighted?.includes(f.id) ?? false,
@@ -106,6 +117,59 @@ function pinData(fc: ReachCollection): GeoJSON.FeatureCollection {
       return end
         ? [{ type: "Feature" as const, geometry: { type: "Point" as const, coordinates: end }, properties: { reach_id: f.id, severity: s } }]
         : [];
+    }),
+  };
+}
+
+/** Line widths grow with zoom: 1x at city scale (never under 3 px for a valued reach),
+ * about 2x at street scale. Zoom must be the top-level interpolate input. */
+function zoomed(expr: unknown): unknown {
+  return ["interpolate", ["linear"], ["zoom"], 10, ["*", expr, 1], 13, ["*", expr, 1.3], 16, ["*", expr, 2]];
+}
+
+const RESET_ICON =
+  '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6V2.5H6M13.5 6V2.5H10M2.5 10v3.5H6M13.5 10v3.5H10"/></svg>';
+
+/** "Reset view" button under the zoom controls: back to the whole network. */
+class ResetControl implements maplibregl.IControl {
+  private el: HTMLDivElement | null = null;
+  constructor(private readonly onReset: () => void) {}
+  onAdd() {
+    const el = document.createElement("div");
+    el.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    const b = document.createElement("button");
+    b.type = "button";
+    b.title = "Reset to the whole network";
+    b.setAttribute("aria-label", "Reset view to the whole stream network");
+    b.className = "kf-reset";
+    b.innerHTML = RESET_ICON;
+    b.onclick = () => this.onReset();
+    el.appendChild(b);
+    this.el = el;
+    return el;
+  }
+  onRemove() {
+    this.el?.remove();
+  }
+}
+
+/** The middle vertex of a reach: where a "Δ≈0" tag sits (a point, so short reaches still
+ * get one - a line-placed label is dropped when the text is longer than the line). */
+function midpoint(f: ReachFeature): [number, number] | null {
+  const g = f.geometry;
+  const pts = g.type === "LineString" ? (g.coordinates as [number, number][]) : g.type === "MultiLineString" ? (g.coordinates as [number, number][][]).flat() : [];
+  return pts.length ? pts[Math.floor(pts.length / 2)] : null;
+}
+
+function tagData(p: ReachMapProps): GeoJSON.FeatureCollection {
+  if (p.scheme !== "change") return EMPTY;
+  return {
+    type: "FeatureCollection",
+    features: p.reaches.features.flatMap((f) => {
+      const v = p.values.get(f.id)?.value;
+      if (v === null || v === undefined || !Number.isFinite(v) || Math.abs(v) >= NEGLIGIBLE_DAYS) return [];
+      const c = midpoint(f);
+      return c ? [{ type: "Feature" as const, geometry: { type: "Point" as const, coordinates: c }, properties: { reach_id: f.id } }] : [];
     }),
   };
 }
@@ -150,7 +214,7 @@ export function ReachMap(props: ReachMapProps) {
         bounds: prev || propsRef.current.fit === false ? undefined : (b ?? undefined),
         center: prev?.center,
         zoom: prev?.zoom,
-        fitBoundsOptions: { padding: 40 },
+        fitBoundsOptions: { padding: 48 },
         attributionControl: { compact: true },
         dragRotate: false,
         pitchWithRotate: false,
@@ -160,6 +224,13 @@ export function ReachMap(props: ReachMapProps) {
       mm.touchZoomRotate.disableRotation();
       if (propsRef.current.interactive !== false) {
         mm.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+        mm.addControl(
+          new ResetControl(() => {
+            const bb = bounds(propsRef.current.reaches);
+            if (bb) mm.fitBounds(bb, { padding: 48, duration: 600 });
+          }),
+          "top-right",
+        );
         mm.addControl(new maplibregl.ScaleControl({ maxWidth: 90 }), "bottom-right");
       }
       mapRef.current = mm;
@@ -191,14 +262,16 @@ export function ReachMap(props: ReachMapProps) {
 
   function setup(map: MLMap) {
     const c = palRef.current;
-    const ramp = rampExpression("value", propsRef.current.breaks, c) as never;
+    const ramp = rampExpression("value", propsRef.current.breaks, c, propsRef.current.scheme) as never;
     const brks = propsRef.current.breaks;
+    const W = (scale = 1) => zoomed(widthExpression("value", brks, scale)) as never;
     map.addSource("catchment-hover", { type: "geojson", data: EMPTY });
     map.addSource("catchment-selected", { type: "geojson", data: EMPTY });
     map.addSource("reaches", { type: "geojson", data: reachData(propsRef.current), promoteId: "reach_id" });
     map.addSource("pins", { type: "geojson", data: pinData(propsRef.current.reaches) });
     map.addSource("exposure", { type: "geojson", data: EMPTY });
     map.addSource("lasso", { type: "geojson", data: EMPTY });
+    map.addSource("tags", { type: "geojson", data: tagData(propsRef.current) });
 
     map.addLayer({ id: "catchment-selected-fill", type: "fill", source: "catchment-selected", paint: { "fill-color": c.brand, "fill-opacity": 0.08 } });
     map.addLayer({ id: "catchment-selected-line", type: "line", source: "catchment-selected", paint: { "line-color": c.brand, "line-width": 1 } });
@@ -215,22 +288,33 @@ export function ReachMap(props: ReachMapProps) {
       source: "exposure",
       minzoom: 14,
       layout: { visibility: "none", "text-field": ["get", "label"], "text-size": 10, "text-font": ["Noto Sans Regular"], "text-offset": [0, 0.9], "text-anchor": "top" },
-      paint: { "text-color": c.inkMuted, "text-halo-color": c.bg, "text-halo-width": 1 },
+      paint: { "text-color": c.inkMuted, "text-halo-color": c.halo, "text-halo-width": 1 },
     });
 
-    // Forecast spread: a soft edge under the line, wider where P10-P90 is wider.
+    // Glow: a soft halo in the line's own colour, so water reads as the focal element even
+    // at thumbnail size. Wider where the forecast spread (P10-P90) is wider.
     map.addLayer({
       id: "reach-spread",
       type: "line",
       source: "reaches",
-      filter: ["all", ["get", "has_value"], [">", ["get", "spread"], 0]],
+      filter: ["all", ["get", "has_value"], ["!", ["get", "faded"]]],
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
         "line-color": ramp,
-        "line-width": ["interpolate", ["linear"], ["get", "spread"], 0, 3, 2, 14],
-        "line-blur": ["interpolate", ["linear"], ["get", "spread"], 0, 2, 2, 10],
-        "line-opacity": 0.35,
+        "line-width": ["interpolate", ["linear"], ["get", "spread"], 0, 9, 2, 18],
+        "line-blur": ["interpolate", ["linear"], ["get", "spread"], 0, 6, 2, 12],
+        "line-opacity": 0.3,
       },
+    });
+    // Hover: whatever the pointer is over - on the map, a list, a table - lights up here,
+    // so every panel points at the same stream.
+    map.addLayer({
+      id: "reach-hover",
+      type: "line",
+      source: "reaches",
+      filter: ["==", ["get", "reach_id"], "__none__"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": c.brandLight, "line-width": zoomed(14) as never, "line-opacity": 0.45, "line-blur": 3 },
     });
     // Selection / scenario casing: kingfisher around the line.
     map.addLayer({
@@ -239,33 +323,26 @@ export function ReachMap(props: ReachMapProps) {
       source: "reaches",
       filter: ["any", ["==", ["get", "reach_id"], ""], ["get", "highlighted"]],
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": c.brand, "line-width": 9, "line-opacity": 0.9 },
+      paint: { "line-color": c.brandLight, "line-width": zoomed(9) as never, "line-opacity": 0.85 },
     });
-    // A thin ground-coloured casing so every line reads on water bodies and hillshade.
-    map.addLayer({
-      id: "reach-ground",
-      type: "line",
-      source: "reaches",
-      filter: ["get", "has_value"],
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": c.surface, "line-width": ["+", widthExpression("value", brks) as never, 2.5] as never, "line-opacity": ["case", ["get", "faded"], 0.2, 0.9] },
-    });
-    // No value: insufficient evidence -> the unsurveyed hatch, not an opacity fade.
+    // No value: insufficient evidence. Drawn as dim water (it IS a stream) with the
+    // unsurveyed hatch over it once zoomed in - never mistaken for a low value.
     map.addLayer({
       id: "reach-unknown-base",
       type: "line",
       source: "reaches",
       filter: ["!", ["get", "has_value"]],
-      layout: { "line-cap": "butt", "line-join": "round" },
-      paint: { "line-color": c.unknown, "line-width": 3, "line-opacity": ["case", ["get", "faded"], 0.2, 0.55] },
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": c.unknown, "line-width": zoomed(2.5) as never, "line-opacity": ["case", ["get", "faded"], 0.25, 0.9] },
     });
     map.addLayer({
       id: "reach-unknown",
       type: "line",
       source: "reaches",
+      minzoom: 12,
       filter: ["!", ["get", "has_value"]],
       layout: { "line-cap": "butt", "line-join": "round" },
-      paint: { "line-pattern": "hatch", "line-width": 3, "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
+      paint: { "line-pattern": "hatch", "line-width": zoomed(2.5) as never, "line-opacity": ["case", ["get", "faded"], 0.15, 0.55] },
     });
     map.addLayer({
       id: "reach-observable",
@@ -273,7 +350,7 @@ export function ReachMap(props: ReachMapProps) {
       source: "reaches",
       filter: ["all", ["get", "has_value"], ["get", "observable"]],
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": ramp, "line-width": widthExpression("value", brks) as never, "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
+      paint: { "line-color": ramp, "line-width": W(), "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
     });
     map.addLayer({
       id: "reach-driver",
@@ -281,17 +358,41 @@ export function ReachMap(props: ReachMapProps) {
       source: "reaches",
       filter: ["all", ["get", "has_value"], ["!", ["get", "observable"]]],
       layout: { "line-cap": "butt", "line-join": "round" },
-      paint: { "line-color": ramp, "line-width": widthExpression("value", brks, 0.75) as never, "line-dasharray": [3, 2], "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
+      paint: { "line-color": ramp, "line-width": W(0.8), "line-dasharray": [3, 1.5], "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
     });
-    // Soundings: the current reading set along the feature, as on a survey chart.
+    // Change map: a negligible change is a finding, not silence. A light dash over the
+    // neutral line plus a "Δ≈0" tag, so the map itself says "this ran, and found ~0".
+    map.addLayer({
+      id: "reach-negligible",
+      type: "line",
+      source: "reaches",
+      filter: ["get", "negligible"],
+      layout: { "line-cap": "butt", "line-join": "round" },
+      paint: { "line-color": c.ink, "line-width": zoomed(1.2) as never, "line-dasharray": [1.5, 2.5], "line-opacity": 0.75 },
+    });
+    map.addLayer({
+      id: "reach-negligible-tag",
+      type: "symbol",
+      source: "tags",
+      layout: {
+        "text-field": "\u0394\u22480",
+        "text-size": 11,
+        "text-font": ["Noto Sans Bold"],
+        "text-offset": [0, -1.1],
+        "text-padding": 6,
+      },
+      paint: { "text-color": c.ink, "text-halo-color": c.halo, "text-halo-width": 1.6 },
+    });
+    // Soundings: the current reading set along the feature, as on a survey chart. In the
+    // change map they carry the signed delta, so direction never rests on colour alone.
     map.addLayer({
       id: "reach-sounding",
       type: "symbol",
       source: "reaches",
-      minzoom: 13.5,
-      filter: ["all", ["get", "has_value"], ["!", ["get", "faded"]]],
-      layout: { "symbol-placement": "line", "text-field": ["get", "sounding"], "text-size": 10, "text-font": ["Noto Sans Regular"], "symbol-spacing": 220, "text-offset": [0, -0.9] },
-      paint: { "text-color": c.ink, "text-halo-color": c.bg, "text-halo-width": 1.2 },
+      minzoom: 13,
+      filter: ["all", ["get", "has_value"], ["!", ["get", "faded"]], ["!", ["get", "negligible"]]],
+      layout: { "symbol-placement": "line", "text-field": ["get", "sounding"], "text-size": 11, "text-font": ["Noto Sans Regular"], "symbol-spacing": 220, "text-offset": [0, -1] },
+      paint: { "text-color": c.ink, "text-halo-color": c.halo, "text-halo-width": 1.4 },
     });
     // Wide transparent hit area so a 2 px line is clickable.
     map.addLayer({ id: "reach-hit", type: "line", source: "reaches", paint: { "line-color": "#000", "line-opacity": 0, "line-width": 14 } });
@@ -353,20 +454,32 @@ export function ReachMap(props: ReachMapProps) {
     if (!m) return;
     (m.getSource("reaches") as GeoJSONSource).setData(reachData(props));
     (m.getSource("pins") as GeoJSONSource).setData(pinData(props.reaches));
-  }, [m, props.reaches, props.values, props.highlighted, props.visible, props.sounding]);
+    (m.getSource("tags") as GeoJSONSource).setData(tagData(props));
+  }, [m, props.reaches, props.values, props.highlighted, props.visible, props.sounding, props.scheme]);
 
   useEffect(() => {
     if (!m) return;
     for (const id of ["reach-observable", "reach-driver", "reach-spread"])
-      m.setPaintProperty(id, "line-color", rampExpression("value", props.breaks, pal) as never);
-    m.setPaintProperty("reach-observable", "line-width", widthExpression("value", props.breaks) as never);
-    m.setPaintProperty("reach-driver", "line-width", widthExpression("value", props.breaks, 0.75) as never);
-    m.setPaintProperty("reach-ground", "line-width", ["+", widthExpression("value", props.breaks), 2.5] as never);
-  }, [m, props.breaks, pal]);
+      m.setPaintProperty(id, "line-color", rampExpression("value", props.breaks, pal, props.scheme) as never);
+    m.setPaintProperty("reach-observable", "line-width", zoomed(widthExpression("value", props.breaks)) as never);
+    m.setPaintProperty("reach-driver", "line-width", zoomed(widthExpression("value", props.breaks, 0.8)) as never);
+  }, [m, props.breaks, pal, props.scheme]);
 
   useEffect(() => {
     if (!m) return;
     m.setFilter("reach-casing", ["any", ["==", ["get", "reach_id"], props.selected ?? "__none__"], ["get", "highlighted"]]);
+  }, [m, props.selected]);
+
+  // A reach chosen from a list or search may be off-screen: bring it into view. A reach
+  // clicked on the map is already visible, so the camera stays put.
+  useEffect(() => {
+    if (!m || !props.selected) return;
+    const f = props.reaches.features.find((x) => x.id === props.selected);
+    const b = f ? featureBounds(f) : null;
+    if (!b) return;
+    const view = m.getBounds();
+    if (view.contains(b.getSouthWest()) && view.contains(b.getNorthEast())) return;
+    m.fitBounds(b, { padding: 120, maxZoom: 15, duration: 700 });
   }, [m, props.selected]);
 
   useEffect(() => {
@@ -400,6 +513,11 @@ export function ReachMap(props: ReachMapProps) {
     const b = bounds(props.reaches);
     if (b) m.fitBounds(b, { padding: 40, duration: 0 });
   }, [m, props.reaches.city]);
+
+  useEffect(() => {
+    if (!m) return;
+    m.setFilter("reach-hover", ["==", ["get", "reach_id"], props.hovered ?? "__none__"]);
+  }, [m, props.hovered]);
 
   // Catchments: hover preview + selected. Fetched on demand, cached for the session.
   useEffect(() => {

@@ -4,6 +4,38 @@ Visual direction for the frontend. Read alongside `MASTERSPEC.md` §13.
 
 ---
 
+## Round 2 (25 Sep 2026) — map contrast, water-first basemap, dashboard grids, Change map
+
+Supersedes everything below where they conflict.
+
+- **Dark by default** (`lib/theme.ts`); light stays one toggle away. Three darkness steps
+  that never collapse: `--chrome-bg #0B0D11` (page, nav) < `--surface #12151B` (cards) <
+  `--map-bg #142235` (a navy, never black). The map sits in `.map-frame`: 16px radius,
+  hairline ring, deep shadow, page padding around it — it never bleeds into the chrome.
+- **Water-first basemap** (`map/basemap.ts`): no hillshade; flat land; roads recede to a
+  muted line and minor roads only fade in from z12.5; labels hidden except places and water
+  names until zoomed in. Our reaches are 3 px minimum, grow with zoom, and carry a soft glow
+  in their own colour. The lowest exceedance band IS water blue (`--exceed-0 #2FA8E0`).
+  Reaches with no value are dim water (`--map-water-dim`), hatched from z12.
+- **Search and locate**: map search box (reach IDs, stream names, basemap places), reset-view
+  control under the zoom buttons, ranked list rows fly to the reach.
+- **Every page is a grid of cards**, fluid to the viewport. Alerts: 4 stat tiles, table +
+  a side column (mini-map, run breakdown, by variable, reason codes), details in a
+  right-hand drawer. Validation: KPI strip, then a 2-column grid (reliability spans two
+  rows), skill values green/red, response-check verdicts as badges.
+- **Scenario map has three modes**: Baseline | With interventions | **Change** (default
+  after a run). Change uses the diverging `--change-*` scale on scenario − baseline days;
+  |Δ| < 0.05 d is an explicit state (neutral line, dashed overlay, a `Δ≈0` tag), and an
+  on-map notice counts better / worse / Δ≈0 / no estimate — the map itself confirms the
+  run, even when the honest answer is ~0.
+- **Resizable panes, VS Code style** (`components/Splitter.tsx`): the gap between two panels
+  is the drag handle (brand line on hover). Double-click resets, arrows nudge, side panels
+  collapse when dragged small; sizes persist per browser. Ctrl+B side panel, Ctrl+J map
+  timeline, 1-4 pages, / search, ? shortcut sheet. Hovering a reach in any list or table
+  lights it on every map. Stat numbers count up (off under reduced motion).
+- **Segmented controls** are pill tracks with the active option filled brand. Buttons are
+  36px; the primary button is visibly disabled until the run is possible.
+
 ## Visual refresh (25 Sep 2026) — supersedes the sections below where they conflict
 
 The chart-paper look read as a rendered spec, not a monitoring product. The refresh keeps

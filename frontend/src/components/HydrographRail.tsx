@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Variable } from "../api/types";
 import { addDays, fmtDay, fmtMonth, fmtSig, parseDate, VARIABLE_LABEL } from "../lib/format";
-import { BRAND, HAIRLINE, INK, INK_MUTED, KINGFISHER, PAPER, RAMP } from "../lib/ramp";
+import { BRAND, HAIRLINE, INK, INK_MUTED, KINGFISHER, PAPER } from "../lib/ramp";
 import type { TimelineIndex } from "../lib/timeline";
 import { useStore } from "../store";
 import { Segmented } from "./bits";
@@ -13,12 +13,12 @@ const SPANS = [
   { id: "all", label: "All", days: Infinity },
 ] as const;
 
-const H = 140;
 const PAD = { l: 44, r: 12, t: 20, b: 22 };
 
 /** The hydrograph rail (design.md): one continuous axis, observed history then the forecast
  * fan. The head is the date the map is drawn at. Gaps in observation stay gaps. */
-export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | null; loading: boolean; error: string | null }) {
+export function HydrographRail({ ix, loading, error, height = 140 }: { ix: TimelineIndex | null; loading: boolean; error: string | null; height?: number }) {
+  const H = height;
   const { selected, railDate, setRailDate, railVariable, setRailVariable } = useStore();
   const [span, setSpan] = useState<(typeof SPANS)[number]["id"]>("1y");
   const wrap = useRef<HTMLDivElement>(null);
@@ -130,9 +130,9 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
         : `${fmtDay(head, true)} — map shows the last clear-sky reading within 10 days, against its seasonal threshold`;
 
   return (
-    <section className="flex shrink-0 flex-col border-t border-hairline bg-surface" aria-label="Hydrograph rail">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 pt-2 pb-1">
-        <h2 className="t-eyebrow">
+    <section className="flex shrink-0 flex-col" aria-label="Hydrograph rail">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-3 pb-1">
+        <h2 className="t-h3 text-[14px]">
           {selected ? `${selected}, ${VARIABLE_LABEL[railVariable]}` : "Clear-sky readings across the city"}
         </h2>
         <span className={`t-dense min-w-0 basis-full truncate sm:basis-auto sm:flex-1 ${railDate ? "text-kf" : "text-muted"}`} aria-live="polite">
@@ -149,12 +149,12 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
             />
           )}
           <Segmented dense label="Time span" value={span} onChange={setSpan} options={SPANS.map((s) => ({ value: s.id, label: s.label }))} />
-          <button type="button" onClick={() => setRailDate(null)} disabled={!railDate} className="btn btn-sm" title="Return the map to the current forecast">
+          <button type="button" onClick={() => setRailDate(null)} disabled={!railDate} className="btn btn-sm !rounded-full" title="Return the map to the current forecast">
             Now
           </button>
         </div>
       </div>
-      <div ref={wrap} className="relative h-[140px]">
+      <div ref={wrap} className="relative" style={{ height: H }}>
         {(loading || error || !x) && (
           <p className="t-dense absolute left-3 top-2 text-muted">{error ? `Timeline unavailable. ${error}` : loading ? "Loading timeline" : "No observations or forecast for this city."}</p>
         )}
@@ -226,7 +226,19 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
               </>
             ) : (
               counts.map(([d, n]) => (
-                <line key={d} x1={x(d)} x2={x(d)} y1={H - PAD.b} y2={H - PAD.b - (n / maxCount) * (H - PAD.t - PAD.b)} stroke={RAMP.slight} strokeWidth={1.5} />
+                <line
+                  key={d}
+                  x1={x(d)}
+                  x2={x(d)}
+                  y1={H - PAD.b}
+                  y2={H - PAD.b - (n / maxCount) * (H - PAD.t - PAD.b)}
+                  stroke="var(--map-water)"
+                  strokeOpacity={hoverDate === d ? 1 : 0.7}
+                  strokeWidth={span === "90d" ? 3 : 1.5}
+                  strokeLinecap="round"
+                >
+                  <title>{`${fmtDay(d, true)}: ${n} reaches with a clear-sky reading`}</title>
+                </line>
               ))
             )}
             {!selected && (
@@ -238,8 +250,8 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
             {/* now */}
             {issued && (
               <g>
-                <line x1={x(issued)} x2={x(issued)} y1={PAD.t - 8} y2={H - PAD.b} stroke={INK} strokeWidth={1} />
-                <text x={x(issued) > w - 30 ? x(issued) - 3 : x(issued) + 3} y={PAD.t - 10} fontSize={10} fill={INK} textAnchor={x(issued) > w - 30 ? "end" : "start"}>
+                <line x1={x(issued)} x2={x(issued)} y1={PAD.t - 8} y2={H - PAD.b} stroke="var(--brand-300)" strokeWidth={1.5} />
+                <text x={x(issued) > w - 30 ? x(issued) - 3 : x(issued) + 3} y={PAD.t - 10} fontSize={10} fontWeight={600} fill="var(--brand-300)" textAnchor={x(issued) > w - 30 ? "end" : "start"}>
                   now
                 </text>
               </g>

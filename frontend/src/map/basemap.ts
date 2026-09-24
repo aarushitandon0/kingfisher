@@ -1,12 +1,14 @@
 import type { StyleSpecification } from "maplibre-gl";
 import { PALETTE, type Palette, type Theme } from "../lib/ramp";
 
-// OpenFreeMap Positron (no key, OSM data), recoloured: desaturated land, water that reads
-// as water, and a faint hillshade for relief. The basemap stays quiet so the exceedance
-// ramp owns the saturated pixels on the map.
+// OpenFreeMap Positron (no key, OSM data), restyled water-first. Most basemaps are drawn for
+// navigation; this one is drawn for hydrology:
+//  - land is one flat fill (no hillshade: relief was the loudest noise on the map)
+//  - roads recede to a muted line, and minor roads only fade in once zoomed in
+//  - labels are hidden except places and water names until zoomed in
+//  - water polygons and the basemap's own waterways read as water; our reaches draw on top
+//    and, with the severity colours, are the only saturated marks.
 const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
-// Open terrain tiles (Mapzen Terrarium on AWS Open Data), no key.
-const DEM_TILES = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
 
 const raw: { p: Promise<StyleSpecification | null> | null } = { p: null };
 const styles = new Map<Theme, Promise<StyleSpecification>>();
@@ -34,7 +36,7 @@ export function basemapStyle(theme: Theme): Promise<StyleSpecification> {
         styles.delete(theme);
         return blank(pal);
       }
-      return recolour(st, pal);
+      return restyle(st, pal);
     });
     styles.set(theme, s);
   }
@@ -50,85 +52,93 @@ function blank(p: Palette): StyleSpecification {
   };
 }
 
-type AnyLayer = StyleSpecification["layers"][number] & { paint?: Record<string, unknown>; layout?: Record<string, unknown> };
+type AnyLayer = StyleSpecification["layers"][number] & {
+  paint?: Record<string, unknown>;
+  layout?: Record<string, unknown>;
+  minzoom?: number;
+};
 
-function recolour(style: StyleSpecification, c: Palette): StyleSpecification {
+/** Fade a layer in between two zooms instead of popping it in. */
+const fadeIn = (z0: number, z1: number, to: number) => ["interpolate", ["linear"], ["zoom"], z0, 0, z1, to];
+
+// Dropped outright: relief, shields, airports, minor place classes, casings (a flat map has
+// no need for road outlines), sub-national boundaries.
+const DROP = /^(highway-shield|road_shield|airport|label_other|label_state|label_country|boundary_3|boundary_disputed|aeroway)|casing/;
+
+function restyle(style: StyleSpecification, c: Palette): StyleSpecification {
   const layers: AnyLayer[] = [];
-  let hillshadeAt = -1;
   for (const src of style.layers as AnyLayer[]) {
+    const id = src.id;
+    if (src.type === "raster" || src.type === "hillshade" || DROP.test(id)) continue;
     const l = { ...src, paint: { ...(src.paint ?? {}) }, layout: { ...(src.layout ?? {}) } } as AnyLayer;
-    const id = l.id;
-    if (l.type === "raster" || id.startsWith("highway-shield") || id.startsWith("road_shield") || id === "airport" || id === "label_other") continue;
     const p = l.paint!;
+    const lay = l.layout!;
+
     if (l.type === "background") p["background-color"] = c.bg;
     else if (id === "water") {
       p["fill-color"] = c.water;
+      p["fill-opacity"] = 1;
       delete p["fill-outline-color"];
-      // Relief goes under the water and everything built.
-      if (hillshadeAt < 0) hillshadeAt = layers.length;
     } else if (id === "waterway") {
-      // The network we draw IS the waterway layer; the basemap's is a guide only.
+      // The basemap's own streams: a guide under our network, still clearly water.
       p["line-color"] = c.waterway;
+      p["line-opacity"] = 0.8;
     } else if (id === "park" || id.startsWith("landcover")) {
       p["fill-color"] = c.park;
-      p["fill-opacity"] = 0.7;
+      p["fill-opacity"] = 0.6;
     } else if (id.startsWith("landuse")) {
       p["fill-color"] = c.landuse;
-      p["fill-opacity"] = 0.6;
+      p["fill-opacity"] = 0.8;
     } else if (id === "building") {
       p["fill-color"] = c.building;
+      p["fill-opacity"] = fadeIn(13, 15, 0.9);
       delete p["fill-outline-color"];
-    } else if (l.type === "line" && (id.includes("casing") || id.startsWith("boundary"))) {
-      p["line-color"] = c.roadCasing;
-    } else if (l.type === "line" && (id.startsWith("highway") || id.startsWith("tunnel") || id.startsWith("road") || id.startsWith("aeroway"))) {
-      p["line-color"] = c.road;
+    } else if (id === "road_area_pier") {
+      p["fill-color"] = c.bg;
+    } else if (l.type === "line" && id.startsWith("boundary")) {
+      p["line-color"] = c.boundary;
+      p["line-opacity"] = 0.4;
     } else if (l.type === "line" && id.startsWith("railway")) {
       p["line-color"] = c.rail;
+      p["line-opacity"] = 0.35;
+    } else if (l.type === "line" && (id === "highway_minor" || id === "highway_path" || id === "road_pier")) {
+      // Minor roads fade in on zoom-in; at city scale they would compete with the water.
+      l.minzoom = 12.5;
+      p["line-color"] = c.road;
+      p["line-opacity"] = fadeIn(12.5, 14.5, 0.35);
+    } else if (l.type === "line" && (id.startsWith("highway") || id.startsWith("tunnel") || id.startsWith("road"))) {
+      p["line-color"] = c.road;
+      p["line-opacity"] = 0.45;
     } else if (l.type === "fill") {
-      p["fill-color"] = c.land;
+      p["fill-color"] = c.bg;
     }
+
     if (l.type === "symbol") {
-      p["text-color"] = c.label;
-      p["text-halo-color"] = c.bg;
-      p["text-halo-width"] = 1.2;
-      p["text-opacity"] = 0.8;
-      if (id.startsWith("water_name") || id.startsWith("waterway")) p["text-color"] = c.waterLabel;
+      const water = id.startsWith("water_name") || id.startsWith("waterway");
+      const major = id === "label_city" || id === "label_city_capital" || id === "label_town";
+      p["text-halo-color"] = c.halo;
+      p["text-halo-width"] = 1.4;
+      if (water) {
+        p["text-color"] = c.waterLabel;
+        p["text-opacity"] = 0.95;
+      } else if (major) {
+        p["text-color"] = c.label;
+        p["text-opacity"] = 0.9;
+      } else {
+        // Villages, street names: hidden until zoomed in, and quieter than the water.
+        l.minzoom = Math.max(l.minzoom ?? 0, id.startsWith("highway-name") ? 15 : 13);
+        p["text-color"] = c.labelMinor;
+        p["text-opacity"] = 0.8;
+      }
+      delete lay["icon-image"];
     }
     layers.push(l);
   }
-  const hillshade = {
-    id: "hillshade",
-    type: "hillshade",
-    source: "dem",
-    maxzoom: 16,
-    paint: {
-      "hillshade-exaggeration": 0.25,
-      "hillshade-shadow-color": c.shadow,
-      "hillshade-highlight-color": c.highlight,
-      "hillshade-accent-color": c.shadow,
-      "hillshade-illumination-anchor": "map",
-    },
-  } as unknown as AnyLayer;
-  layers.splice(hillshadeAt < 0 ? 1 : hillshadeAt, 0, hillshade);
-  return {
-    ...style,
-    sources: {
-      ...style.sources,
-      dem: {
-        type: "raster-dem",
-        tiles: [DEM_TILES],
-        encoding: "terrarium",
-        tileSize: 256,
-        maxzoom: 14,
-        attribution: "Terrain: Mapzen / AWS Open Data",
-      },
-    },
-    layers: layers as StyleSpecification["layers"],
-  };
+  return { ...style, layers: layers as StyleSpecification["layers"] };
 }
 
 /** 45 degree hatch as a line-pattern image, transparent between the strokes: drawn over a
- * grey base line it gives the INSUFFICIENT_EVIDENCE state (the unsurveyed-area hatch). */
+ * dim-water base line it gives the INSUFFICIENT_EVIDENCE state (the unsurveyed-area hatch). */
 export function hatchImage(color: string, size = 6): { width: number; height: number; data: Uint8Array } {
   const data = new Uint8Array(size * size * 4);
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));

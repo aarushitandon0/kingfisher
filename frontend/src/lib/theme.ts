@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from "react";
 import type { Theme } from "./ramp";
 
-// Light/dark: follows the system unless the viewer pins one (remembered per browser).
-// The pin is `data-theme` on <html>; theme.css reads it.
+// Dark by default (the design is dark-first: the map needs a dark ground for the water to
+// be the brightest thing on it). The viewer can pin light; the pin is remembered per
+// browser and written as `data-theme` on <html>, which theme.css reads.
 
 const KEY = "kingfisher-theme";
 const listeners = new Set<() => void>();
-const media = typeof window !== "undefined" ? window.matchMedia?.("(prefers-color-scheme: dark)") : undefined;
 
 function readPin(): Theme | null {
   try {
@@ -17,15 +17,15 @@ function readPin(): Theme | null {
   }
 }
 
-let pin: Theme | null = readPin();
-if (pin && typeof document !== "undefined") document.documentElement.dataset.theme = pin;
+let current: Theme = readPin() ?? "dark";
+if (typeof document !== "undefined") document.documentElement.dataset.theme = current;
 
 export function currentTheme(): Theme {
-  return pin ?? (media?.matches ? "dark" : "light");
+  return current;
 }
 
 export function setTheme(t: Theme) {
-  pin = t;
+  current = t;
   document.documentElement.dataset.theme = t;
   try {
     localStorage.setItem(KEY, t);
@@ -35,13 +35,11 @@ export function setTheme(t: Theme) {
   listeners.forEach((l) => l());
 }
 
-media?.addEventListener?.("change", () => listeners.forEach((l) => l()));
-
 function subscribe(l: () => void) {
   listeners.add(l);
   return () => listeners.delete(l);
 }
 
 export function useTheme(): Theme {
-  return useSyncExternalStore(subscribe, currentTheme, () => "light");
+  return useSyncExternalStore(subscribe, currentTheme, () => "dark");
 }

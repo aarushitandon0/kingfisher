@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ApiError } from "../api/client";
 import type { Observability, Severity } from "../api/types";
 import { rampColor, SEVERITY_COLOR } from "../lib/ramp";
@@ -15,13 +15,57 @@ export function Rule({ children, as: Tag = "h3" }: { children: ReactNode; as?: "
 }
 
 /** Page title + one line of context. Page titles sit one step above section titles. */
-export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
+export function PageHeader({ title, children, actions }: { title: string; children?: ReactNode; actions?: ReactNode }) {
   return (
-    <header className="mb-6">
-      <h1 className="t-display">{title}</h1>
-      {children && <div className="t-ui mt-1.5 max-w-4xl text-muted">{children}</div>}
+    <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0">
+        <h1 className="t-display">{title}</h1>
+        {children && <div className="t-ui mt-1 max-w-4xl text-muted">{children}</div>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-3">{actions}</div>}
     </header>
   );
+}
+
+/** A card with a real title (h3 scale) and an optional one-line caption under it. */
+export function Card({
+  title,
+  caption,
+  aside,
+  children,
+  className = "",
+  bodyClass = "",
+  as: Tag = "section",
+}: {
+  title?: ReactNode;
+  caption?: ReactNode;
+  aside?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+  bodyClass?: string;
+  as?: "section" | "div" | "aside";
+}) {
+  return (
+    <Tag className={`card flex min-w-0 flex-col ${className}`}>
+      {(title || aside) && (
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5 pt-5">
+          <div className="min-w-0">
+            {title && <h2 className="t-h3">{title}</h2>}
+            {caption && <p className="t-dense mt-1 text-muted">{caption}</p>}
+          </div>
+          {aside}
+        </div>
+      )}
+      <div className={`min-w-0 flex-1 px-5 pt-4 pb-5 ${bodyClass}`}>{children}</div>
+    </Tag>
+  );
+}
+
+/** Scenario response-check verdict: fail / warn / pass, never plain grey text. */
+export function VerdictBadge({ verdict }: { verdict: string }) {
+  const v = verdict.toUpperCase();
+  const cls = v === "PASS" || v === "OK" ? "pill-ok" : v === "NEGLIGIBLE" ? "pill-watch" : "pill-alert";
+  return <span className={`pill pill-sm ${cls}`}>{v === "OK" ? "Pass" : v.charAt(0) + v.slice(1).toLowerCase().replaceAll("_", " ")}</span>;
 }
 
 /** Plainly stated - "optically observable" or "driver-predicted". */
@@ -66,7 +110,7 @@ export function severityBorder(s: Severity | null): { className: string; style?:
 }
 
 const PILL: Record<Severity, string> = { ALERT: "pill-alert", WATCH: "pill-watch", INSUFFICIENT_EVIDENCE: "pill-insufficient" };
-const SEVERITY_TEXT: Record<Severity, string> = { ALERT: "text-alert", WATCH: "text-watch-text", INSUFFICIENT_EVIDENCE: "text-muted" };
+const SEVERITY_TEXT: Record<Severity, string> = { ALERT: "text-alert", WATCH: "text-watch-text", INSUFFICIENT_EVIDENCE: "text-ink" };
 
 /** Severity as a pill: tinted ground, severity-coloured text, a dot. */
 export function SeverityLabel({ s, small = false }: { s: Severity; small?: boolean }) {
@@ -77,7 +121,7 @@ export function SeverityLabel({ s, small = false }: { s: Severity; small?: boole
 export function ErrorNote({ error, what }: { error: ApiError | null; what: string }) {
   if (!error) return null;
   return (
-    <div role="alert" className="t-ui my-2 rounded-md border-l-[3px] border-alert bg-paper-alt py-2 pr-3 pl-3">
+    <div role="alert" className="t-ui my-2 rounded-md border-l-[3px] border-alert bg-[var(--severity-critical-bg)] py-2 pr-3 pl-3">
       <p className="font-medium text-ink">{what} unavailable.</p>
       <p className="text-muted">{error.detail}</p>
     </div>
@@ -121,9 +165,9 @@ export interface SegmentOption<T extends string> {
   label: ReactNode;
 }
 
-/** One-of-N choice. The single toggle control used everywhere (variable, span, fold, tool):
- * hairline group, the chosen segment on recessed paper with a kingfisher underline - the
- * same mark as the active nav tab. ARIA radiogroup with roving tabindex and arrow keys. */
+/** One-of-N choice. The single toggle control used everywhere (variable, span, fold, tool,
+ * scenario map mode): a pill track, the chosen option filled with the brand. ARIA
+ * radiogroup with roving tabindex and arrow keys. */
 export function Segmented<T extends string>({
   label,
   value,
@@ -150,7 +194,12 @@ export function Segmented<T extends string>({
     refs.current[next]?.focus();
   }
   return (
-    <div role="radiogroup" aria-label={label} onKeyDown={onKey} className={`inline-flex max-w-full shrink-0 self-start rounded-md bg-paper-alt p-0.5 ${className}`}>
+    <div
+      role="radiogroup"
+      aria-label={label}
+      onKeyDown={onKey}
+      className={`inline-flex max-w-full shrink-0 self-start overflow-x-auto rounded-full bg-raised p-[3px] shadow-[inset_0_0_0_1px_var(--border)] ${className}`}
+    >
       {options.map((o, i) => {
         const on = i === idx;
         return (
@@ -164,8 +213,8 @@ export function Segmented<T extends string>({
             aria-checked={on}
             tabIndex={on ? 0 : -1}
             onClick={() => onChange(o.value)}
-            className={`${dense ? "t-dense h-6 px-2" : "t-ui h-7 px-3"} rounded-[5px] font-medium whitespace-nowrap ${
-              on ? "bg-surface text-brand shadow-[0_1px_2px_rgba(0,0,0,0.08),0_0_0_1px_var(--border)]" : "text-muted hover:text-ink"
+            className={`${dense ? "h-7 px-3 text-[12px]" : "h-[30px] px-3.5 text-[13px]"} rounded-full leading-4 font-medium whitespace-nowrap ${
+              on ? "bg-brand text-[var(--on-brand)] shadow-[var(--shadow-sm)]" : "text-muted hover:text-ink"
             }`}
           >
             {o.label}
@@ -200,8 +249,9 @@ export function RampGauge({ value, breaks, max, fmt }: { value: number; breaks: 
   );
 }
 
-/** A counted reading: label, a mono number in its severity colour, a 3px top edge.
- * Optionally a filter toggle. */
+/** A counted reading (§2.5 stat tile): eyebrow label, a big number, a caption, and a 3px
+ * top edge in the tile's accent (severity colour, hatched for insufficient evidence).
+ * With `onToggle` the whole tile is the toggle. */
 export function Stat({
   label,
   value,
@@ -210,6 +260,7 @@ export function Stat({
   tone = "neutral",
   pressed,
   onToggle,
+  className = "",
 }: {
   label: ReactNode;
   value: ReactNode;
@@ -219,34 +270,60 @@ export function Stat({
   tone?: "brand" | "neutral";
   pressed?: boolean;
   onToggle?: () => void;
+  className?: string;
 }) {
   const off = onToggle && !pressed;
-  const edge = severity === "INSUFFICIENT_EVIDENCE" ? undefined : severity ? SEVERITY_COLOR[severity] : tone === "brand" ? "var(--brand-500)" : "var(--border)";
+  const edge = severity === "INSUFFICIENT_EVIDENCE" ? undefined : severity ? SEVERITY_COLOR[severity] : tone === "brand" ? "var(--brand-500)" : "var(--border-strong)";
   const body = (
     <>
-      {/* 3px top edge in the severity colour; hatched for insufficient evidence. */}
       <span aria-hidden className={`absolute inset-x-0 top-0 h-[3px] ${severity === "INSUFFICIENT_EVIDENCE" ? "hatch" : ""}`} style={{ background: edge }} />
-      <span className="t-dense flex items-center gap-1.5">
+      <span className="flex items-center justify-between gap-2">
+        <span className="t-eyebrow min-w-0 break-words">{label}</span>
         {onToggle && (
-          <span aria-hidden className={`inline-grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[3px] border ${pressed ? "border-brand bg-brand" : "border-faint bg-surface"}`}>
+          <span aria-hidden className={`inline-grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border-2 ${pressed ? "border-brand bg-brand" : "border-hairline-strong"}`}>
             {pressed && (
-              <svg viewBox="0 0 10 10" width="8" height="8">
-                <path d="M1.5 5.2 4 7.5l4.5-5" fill="none" stroke="var(--on-brand)" strokeWidth="1.8" />
+              <svg viewBox="0 0 10 10" width="9" height="9">
+                <path d="M1.5 5.2 4 7.5l4.5-5" fill="none" stroke="#fff" strokeWidth="1.8" />
               </svg>
             )}
           </span>
         )}
-        {label}
       </span>
-      <span className={`t-reading mt-1.5 block ${off ? "opacity-45" : ""} ${severity ? SEVERITY_TEXT[severity] : tone === "brand" ? "text-brand" : "text-ink"}`}>{value}</span>
-      {note && <span className="t-dense mt-0.5 block text-muted">{note}</span>}
+      <span className={`t-stat mt-2 block ${off ? "opacity-40" : ""} ${severity ? SEVERITY_TEXT[severity] : tone === "brand" ? "text-brand-text" : "text-ink"}`}>{typeof value === "number" ? <CountUp value={value} /> : value}</span>
+      {note && <span className="t-dense mt-1 block text-muted">{note}</span>}
     </>
   );
-  const cls = "card relative flex min-w-0 flex-col items-stretch justify-start overflow-hidden pt-3.5 pr-3 pb-3 pl-3 text-left";
+  const cls = `card relative flex min-w-0 flex-col items-stretch justify-start overflow-hidden p-4 pt-[18px] text-left ${className}`;
   if (!onToggle) return <div className={cls}>{body}</div>;
   return (
-    <button type="button" aria-pressed={pressed} onClick={onToggle} className={`${cls} ctl hover:shadow-[var(--shadow-float)] ${off ? "bg-paper-alt" : ""}`}>
+    <button type="button" aria-pressed={pressed} onClick={onToggle} className={`${cls} ctl hover:bg-raised ${off ? "opacity-80" : ""}`}>
       {body}
     </button>
   );
+}
+
+/** An integer that counts up to its value when it first appears or changes (~500 ms, eased).
+ * Display only: the final number is the value given; nothing is computed here. */
+export function CountUp({ value }: { value: number }) {
+  const [shown, setShown] = useState(value);
+  const from = useRef(0);
+  useEffect(() => {
+    if (!Number.isInteger(value) || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setShown(value);
+      return;
+    }
+    const a = from.current;
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / 500);
+      const e = 1 - Math.pow(1 - k, 3);
+      setShown(Math.round(a + (value - a) * e));
+      if (k < 1) raf = requestAnimationFrame(tick);
+      else from.current = value;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <span aria-label={String(value)}>{shown}</span>;
 }
