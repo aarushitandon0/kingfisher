@@ -7,6 +7,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { CatchmentFeature, ExposureLayer, ReachCollection, ReachFeature } from "../api/types";
+import { Loading } from "../components/bits";
 import { cached } from "../lib/useApi";
 import { ALERT, INK, INK_MUTED, KINGFISHER, PAPER, UNKNOWN, WATCH, rampExpression } from "../lib/ramp";
 import { chartPaperStyle, hatchImage } from "./basemap";
@@ -432,7 +433,11 @@ export function ReachMap(props: ReachMapProps) {
           aria-hidden
         />
       )}
-      {!ready && <div className="absolute inset-0 grid place-items-center t-ui text-muted">Loading map</div>}
+      {!ready && (
+        <div className="absolute inset-0 grid place-items-center">
+          <Loading what="map" />
+        </div>
+      )}
     </div>
   );
 }

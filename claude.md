@@ -251,6 +251,11 @@ Day 8  — [~] frontend: scenarios, validation, Pune        ← feature freeze 1
            reaches, 57 monotonicity violations (18%, REVIEW - bad snaps on the 30 m DEM).
            Gate: 59/312 observable. Full as-issued backfill NOT run for Pune (quota) - only
            the live run for the production forecast, so Pune's ASISSUED evaluation is absent.
+           CHECKED 2026-09-24: Pune has reaches + observations + riparian NDVI in the DB but
+           NO drivers_daily, catchment_attributes, exposure_features, frame, model, forecasts
+           or metrics. So Pune's scenarios/validation/priorities 503/404 and its map has no
+           forecast. Needs: make l2 static exposure dataset train evaluate response-check
+           live-weather forecasts-latest alerts city=pune.
 Day 9  — [ ] docs, FHIR, deploy
 Day 10 — [ ] video, SUBMIT
 ```

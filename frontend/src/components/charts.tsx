@@ -77,7 +77,7 @@ export function FanChart({
   return (
     <div className="h-44 w-full" role="img" aria-label={`Observed ${variable} for the last ${days} days and the 10-day forecast fan`}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <ComposedChart data={rows} margin={{ top: 8, right: 20, bottom: 0, left: 0 }}>
           <CartesianGrid vertical={false} stroke={HAIRLINE} strokeOpacity={0.5} />
           <XAxis
             dataKey="t"

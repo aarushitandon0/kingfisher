@@ -2,7 +2,7 @@ import type { Map as MLMap } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { Citation, InterventionInfo, ReachCollection, ReachResult, ScenarioResult, Variable } from "../api/types";
-import { ErrorNote, Loading, Swatch } from "../components/bits";
+import { Chevron, ErrorNote, Loading, Segmented, Swatch } from "../components/bits";
 import { fmtDay, fmtMoney, fmtNum, fmtProb, humanize, VARIABLE_LABEL } from "../lib/format";
 import { DAYS_BREAKS, legendStops, PROB_BREAKS, SCENARIO } from "../lib/ramp";
 import { useApi, type Loadable } from "../lib/useApi";
@@ -107,44 +107,59 @@ export function ScenarioView({ city, reaches }: { city: string; reaches: Loadabl
     setSwipe((e.clientX - r.left) / r.width);
   };
 
+  // Driver-only reaches have no seasonal threshold, so the engine returns
+  // INSUFFICIENT_EVIDENCE for them. Say so before the run, not only after it.
+  const observable = useMemo(() => new Set((fc?.features ?? []).filter((f) => f.properties.observable).map((f) => f.id)), [fc]);
+  const driverOnlySelected = scenarioReaches.filter((id) => !observable.has(id));
+
   if (!fc) return <div className="p-6">{reaches.error ? <ErrorNote error={reaches.error} what="Reaches" /> : <Loading what="reaches" />}</div>;
 
+  const selectedCount = scenarioReaches.length;
+  const clearAll = () => {
+    setScenarioReaches([]);
+    setScenario(null);
+  };
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <p className="t-ui border-b border-hairline bg-paper-alt px-4 py-1.5 text-muted" role="note">
+    <div className="flex flex-col md:min-h-0 md:flex-1">
+      <p className="t-ui flex items-start gap-2 border-b border-hairline bg-paper-alt px-4 py-2 text-muted" role="note">
+        <span aria-hidden className="mt-[7px] inline-block h-1.5 w-1.5 shrink-0 bg-muted" />
         {CAVEAT}
       </p>
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <div className="flex min-h-[360px] flex-1 flex-col">
-          <div className="flex flex-wrap items-center gap-3 border-b border-hairline px-3 py-1.5 t-dense">
+      <div className="flex flex-col md:min-h-0 md:flex-1 md:flex-row">
+        <div className="flex flex-col md:min-h-[360px] md:flex-1">
+          <div className="t-dense flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline px-3 py-2">
             <span className="text-muted">Select reaches</span>
-            <div role="radiogroup" aria-label="Selection tool" className="flex gap-1">
-              {[
-                [false, "Click"],
-                [true, "Lasso"],
-              ].map(([v, label]) => (
-                <button key={String(label)} type="button" role="radio" aria-checked={lasso === v} onClick={() => setLasso(v as boolean)} className={`border px-2 ${lasso === v ? "border-ink text-ink" : "border-hairline text-muted"}`}>
-                  {label as string}
-                </button>
-              ))}
-            </div>
-            <span className="t-value-sm">{scenarioReaches.length}</span>
-            <span className="text-muted">selected</span>
-            <button type="button" onClick={() => setScenarioReaches([])} disabled={!scenarioReaches.length} className="text-muted underline underline-offset-2 disabled:no-underline">
-              Clear
+            <Segmented
+              dense
+              label="Selection tool"
+              value={lasso ? "lasso" : "click"}
+              onChange={(v) => setLasso(v === "lasso")}
+              options={[
+                { value: "click", label: "Click" },
+                { value: "lasso", label: "Lasso" },
+              ]}
+            />
+            <span aria-live="polite">
+              <span className={`t-value-sm ${selectedCount ? "text-kf" : ""}`}>{selectedCount}</span> <span className="text-muted">selected</span>
+            </span>
+            <button type="button" onClick={clearAll} disabled={!selectedCount && !result} className="btn btn-ghost btn-sm">
+              {result ? "Clear and start over" : "Clear"}
             </button>
             {result && (
-              <div className="ml-auto flex items-center gap-2">
+              <div className="flex items-center gap-2 sm:ml-auto">
                 <span className="text-muted">Colour by</span>
-                {(["turbidity_proxy", "ndci"] as Variable[]).map((v) => (
-                  <button key={v} type="button" aria-pressed={variable === v} onClick={() => setVariable(v)} className={variable === v ? "text-ink underline underline-offset-4" : "text-muted"}>
-                    {v === "ndci" ? "NDCI" : "turbidity"}
-                  </button>
-                ))}
+                <Segmented
+                  dense
+                  label="Colour by"
+                  value={variable}
+                  onChange={setVariable}
+                  options={(["turbidity_proxy", "ndci"] as Variable[]).map((v) => ({ value: v, label: v === "ndci" ? "NDCI" : "Turbidity" }))}
+                />
               </div>
             )}
           </div>
-          <div ref={wrap} className="relative min-h-0 flex-1 overflow-hidden" onPointerMove={onDivider} onPointerUp={() => (drag.current = false)}>
+          <div ref={wrap} className="relative h-[55vh] min-h-[320px] overflow-hidden md:h-auto md:min-h-0 md:flex-1" onPointerMove={onDivider} onPointerUp={() => (drag.current = false)}>
             <ReachMap
               label="Scenario map, baseline"
               reaches={fc}
@@ -202,14 +217,23 @@ export function ScenarioView({ city, reaches }: { city: string; reaches: Loadabl
                   }}
                 >
                   <div className="mx-auto h-full w-px bg-ink" />
-                  <span className="t-dense absolute top-2 right-3 whitespace-nowrap bg-paper px-1">baseline</span>
-                  <span className="t-dense absolute top-2 left-3 whitespace-nowrap bg-paper px-1" style={{ color: SCENARIO }}>
+                  <span aria-hidden className="absolute top-1/2 left-1/2 flex h-8 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-[3px] border border-ink bg-paper">
+                    <span className="h-3.5 w-px bg-ink" />
+                    <span className="h-3.5 w-px bg-ink" />
+                  </span>
+                  <span className="map-panel t-dense absolute top-2 right-3 whitespace-nowrap px-1.5 py-0.5">baseline</span>
+                  <span className="map-panel t-dense absolute top-2 left-3 whitespace-nowrap px-1.5 py-0.5" style={{ color: SCENARIO }}>
                     with interventions
                   </span>
                 </div>
               </>
             )}
-            <div className="absolute bottom-7 left-2 z-10 border border-hairline bg-paper/95 px-2 py-1.5 t-dense">
+            {!result && selectedCount === 0 && (
+              <p className="map-panel t-ui pointer-events-none absolute top-3 right-14 left-3 z-10 px-3 py-2 text-ink sm:right-auto sm:left-1/2 sm:w-max sm:max-w-[calc(100%-8rem)] sm:-translate-x-1/2 sm:text-center">
+                {lasso ? "Draw around the reaches to include." : "Click reaches to add them to the scenario, or switch to Lasso."} Only coloured (observable) reaches give exceedance days; hatched ones have no threshold.
+              </p>
+            )}
+            <div className="map-panel t-dense absolute bottom-8 left-3 z-10 px-2 py-1.5">
               <p className="mb-1">{result ? `Exceedance days per year, ${VARIABLE_LABEL[variable]}` : "Peak P(exceed), current forecast"}</p>
               <div className="grid grid-cols-[auto_1fr] items-center gap-x-2">
                 {legendStops(result ? DAYS_BREAKS : PROB_BREAKS, (v) => (result ? v.toFixed(0) : v.toFixed(1))).map((s) => (
@@ -224,43 +248,70 @@ export function ScenarioView({ city, reaches }: { city: string; reaches: Loadabl
             </div>
           </div>
         </div>
-        <aside className="max-h-[60vh] w-full shrink-0 overflow-y-auto border-t border-hairline p-4 md:max-h-none md:w-[420px] md:border-l md:border-t-0" aria-label="Interventions">
-          <h2 className="t-title">Interventions</h2>
-          {catalogue.loading && <Loading what="coefficient table" />}
-          <ErrorNote error={catalogue.error} what="Coefficient table" />
+        <aside className="flex w-full shrink-0 flex-col border-t border-hairline md:min-h-0 md:w-[360px] md:border-t-0 md:border-l lg:w-[420px]" aria-label="Interventions">
+          <div className="px-4 pt-4 pb-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
+            <h2 className="t-title">Interventions</h2>
+            {catalogue.loading && <Loading what="coefficient table" className="mt-2" />}
+            <ErrorNote error={catalogue.error} what="Coefficient table" />
+            {catalogue.data && (
+              <>
+                <p className="t-dense mt-1 text-muted">
+                  Coefficient table v<span className="t-value-sm">{catalogue.data.coefficient_table_version}</span>. Effect sizes come only from the cited sources below; the model never supplies them.
+                </p>
+                <div className="mt-3 flex flex-col">
+                  {catalogue.data.interventions.map((i) => (
+                    <Lever key={i.id} i={i} />
+                  ))}
+                  {catalogue.data.not_quantified.map((n) => (
+                    <div key={n.id} className="hairline-b py-4 text-muted">
+                      <p className="t-ui flex items-center gap-2.5">
+                        <input type="checkbox" disabled aria-label={`${n.name} (not quantified)`} />
+                        <span>{n.name} — not quantified</span>
+                      </p>
+                      <p className="t-dense mt-1.5">{n.reason}</p>
+                      <Citations list={n.citations} />
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           {catalogue.data && (
-            <>
-              <p className="t-dense text-muted">
-                Coefficient table v<span className="t-value-sm">{catalogue.data.coefficient_table_version}</span>. Effect sizes come only from the cited sources below; the model never supplies them.
+            <div className="sticky bottom-0 z-10 border-t border-hairline bg-paper px-4 pt-3 pb-4">
+              <p className="t-dense mb-2 text-muted" aria-live="polite">
+                <span className={`t-value-sm ${selectedCount ? "text-ink" : ""}`}>{selectedCount}</span> {selectedCount === 1 ? "reach" : "reaches"},{" "}
+                <span className={`t-value-sm ${enabled.length ? "text-ink" : ""}`}>{enabled.length}</span> {enabled.length === 1 ? "intervention" : "interventions"}
+                {enabled.length > 0 && <span className="text-ink">: {enabled.map((i) => i.name).join(", ")}</span>}
               </p>
-              <div className="mt-3 flex flex-col">
-                {catalogue.data.interventions.map((i) => (
-                  <Lever key={i.id} i={i} />
-                ))}
-                {catalogue.data.not_quantified.map((n) => (
-                  <div key={n.id} className="hairline-b py-3 text-muted">
-                    <p className="t-ui">
-                      <input type="checkbox" disabled aria-label={`${n.name} (not quantified)`} className="mr-2 align-middle" />
-                      {n.name} — not quantified
-                    </p>
-                    <p className="t-dense mt-1">{n.reason}</p>
-                    <Citations list={n.citations} />
-                  </div>
-                ))}
-              </div>
-              <button type="button" onClick={run} disabled={!canRun} className="t-ui mt-4 w-full border border-ink bg-ink py-2 text-paper disabled:border-hairline disabled:bg-paper-alt disabled:text-muted">
+              <button type="button" onClick={run} disabled={!canRun} aria-busy={running} className="btn btn-primary h-10 w-full">
                 {running ? "Running scenario" : "Run scenario"}
               </button>
+              {running && <div className="progress mt-2" aria-hidden />}
               {running && (
-                <p className="t-dense mt-1 text-muted">
-                  Re-scoring a full reference year for {scenarioReaches.length} reaches, baseline and scenario, across the coefficient range. Roughly half a second per reach.
+                <p className="t-dense mt-1.5 text-muted">
+                  Re-scoring a full reference year for {selectedCount} reaches, baseline and scenario, across the coefficient range. Roughly half a second per reach.
                 </p>
               )}
-              {scenarioReaches.length > 100 && <p className="t-dense mt-1 text-ink">A scenario covers at most 100 reaches; narrow the selection.</p>}
-              {!scenarioReaches.length && <p className="t-dense mt-1 text-muted">Select reaches on the map first.</p>}
-              {scenarioReaches.length > 0 && !enabled.length && <p className="t-dense mt-1 text-muted">Choose at least one intervention.</p>}
+              {selectedCount > 100 && <p className="t-dense mt-1.5 text-ink">A scenario covers at most 100 reaches; narrow the selection.</p>}
+              {!selectedCount && <p className="t-dense mt-1.5 text-muted">Select reaches on the map first.</p>}
+              {selectedCount > 0 && !enabled.length && <p className="t-dense mt-1.5 text-muted">Choose at least one intervention above.</p>}
+              {driverOnlySelected.length > 0 && (
+                <div className="t-dense mt-1.5 text-ink">
+                  <p>
+                    <span className="t-value-sm">{driverOnlySelected.length}</span> of <span className="t-value-sm">{selectedCount}</span> selected{" "}
+                    {driverOnlySelected.length === 1 ? "reach is" : "reaches are"} driver-only: no satellite record, so no seasonal threshold, and the scenario will return
+                    insufficient evidence for {driverOnlySelected.length === 1 ? "it" : "them"}. Exceedance days need one of the{" "}
+                    <span className="t-value-sm">{observable.size}</span> optically observable reaches.
+                  </p>
+                  {driverOnlySelected.length < selectedCount && (
+                    <button type="button" className="btn btn-ghost btn-sm mt-1" onClick={() => setScenarioReaches(scenarioReaches.filter((id) => observable.has(id)))}>
+                      Keep the observable reaches only
+                    </button>
+                  )}
+                </div>
+              )}
               <ErrorNote error={runError} what="Scenario" />
-            </>
+            </div>
           )}
         </aside>
       </div>
@@ -274,50 +325,79 @@ function Lever({ i }: { i: InterventionInfo }) {
   const s = levers[i.id] ?? { enabled: false, extent: defaultExtent(i) };
   const allNotEstimable = Object.values(i.paths).every((p) => p.path === "NOT_ESTIMABLE");
   const step = i.operation === "scale_down" ? 0.05 : 1;
+  const digits = i.magnitude < 1 ? 3 : 1;
   return (
-    <div className="hairline-b py-3">
-      <label className="t-ui flex items-center gap-2">
-        <input type="checkbox" checked={s.enabled} onChange={() => setLever(i.id, { enabled: !s.enabled })} />
-        <span className="text-ink">{i.name}</span>
+    <div className={`hairline-b -mx-4 border-l-2 py-4 pr-4 pl-[14px] ${s.enabled ? "border-l-kf bg-paper-alt/60" : "border-l-transparent"}`}>
+      <label className="flex cursor-pointer items-start gap-2.5">
+        <input type="checkbox" className="mt-[3px] shrink-0" checked={s.enabled} onChange={() => setLever(i.id, { enabled: !s.enabled })} />
+        <span className="min-w-0">
+          <span className="t-ui block font-medium text-ink">{i.name}</span>
+          <span className="t-dense mt-0.5 block text-muted">
+            {humanize(i.direction)}s {i.feature.replaceAll("_", " ")}: cited magnitude <span className="t-value-sm text-ink">{fmtNum(i.magnitude, digits)}</span> (range{" "}
+            <span className="t-value-sm">
+              {fmtNum(i.uncertainty_range[0], digits)}–{fmtNum(i.uncertainty_range[1], digits)}
+            </span>
+            ), {i.effect_unit}.
+          </span>
+        </span>
       </label>
-      <p className="t-dense mt-1 text-muted">
-        {humanize(i.direction)}s {i.feature.replaceAll("_", " ")}: cited magnitude <span className="t-value-sm text-ink">{fmtNum(i.magnitude, i.magnitude < 1 ? 3 : 1)}</span>{" "}
-        (range <span className="t-value-sm">{fmtNum(i.uncertainty_range[0], i.magnitude < 1 ? 3 : 1)}–{fmtNum(i.uncertainty_range[1], i.magnitude < 1 ? 3 : 1)}</span>), {i.effect_unit}.
-      </p>
-      {i.extent_unit && (
-        <div className="mt-2">
-          <label className="t-dense flex items-center gap-2">
-            <span className="w-24 shrink-0 text-muted">Extent</span>
-            <input
-              type="range"
-              min={step}
-              max={i.extent_max ?? 1}
-              step={step}
-              value={s.extent ?? defaultExtent(i) ?? 0}
-              onChange={(e) => setLever(i.id, { extent: Number(e.target.value) })}
-              disabled={!s.enabled}
-              className="flex-1"
-              aria-valuetext={`${s.extent} ${i.extent_unit}`}
-            />
-            <span className="t-value-sm w-12 text-right">{i.operation === "scale_down" ? fmtNum(s.extent, 2) : fmtNum(s.extent, 0)}</span>
-          </label>
-          <p className="t-dense text-muted">{i.extent_unit}{i.operation === "subtract_treated_share" ? "; cannot exceed a reach's current imperviousness" : i.operation === "scale_down" ? "; 1 = the coverage of the cited study" : ""}.</p>
-        </div>
-      )}
-      {i.operation === "floor" && <p className="t-dense mt-1 text-muted">Fixed at the cited design width; no extent to choose.</p>}
-      <div className="mt-2 t-dense">
-        {Object.entries(i.paths).map(([v, p]) => (
-          <p key={v} className={p.path === "NOT_ESTIMABLE" ? "text-muted" : ""}>
-            <span className="text-ink">{v === "ndci" ? "NDCI" : "Turbidity"}:</span> {PATH_TEXT[p.path]}. <span className="text-muted">{p.reason}</span>
-          </p>
-        ))}
-        {allNotEstimable && s.enabled && <p className="mt-1 text-ink">This lever will return no estimate on this city: the model's response to it failed the check and no cited direct effect exists.</p>}
+      <div className="pl-6">
+        {i.extent_unit && (
+          <div className="mt-3">
+            <label className="t-dense flex items-center gap-3">
+              <span className="shrink-0 text-muted">Extent</span>
+              <input
+                type="range"
+                min={step}
+                max={i.extent_max ?? 1}
+                step={step}
+                value={s.extent ?? defaultExtent(i) ?? 0}
+                onChange={(e) => setLever(i.id, { extent: Number(e.target.value) })}
+                disabled={!s.enabled}
+                className="min-w-0 flex-1 disabled:opacity-50"
+                aria-valuetext={`${s.extent} ${i.extent_unit}`}
+              />
+              <span className={`t-value-sm w-12 text-right ${s.enabled ? "text-ink" : "text-muted"}`}>{i.operation === "scale_down" ? fmtNum(s.extent, 2) : fmtNum(s.extent, 0)}</span>
+            </label>
+            <p className="t-dense mt-0.5 text-muted">
+              {i.extent_unit}
+              {i.operation === "subtract_treated_share" ? "; cannot exceed a reach's current imperviousness" : i.operation === "scale_down" ? "; 1 = the coverage of the cited study" : ""}.
+            </p>
+          </div>
+        )}
+        {i.operation === "floor" && <p className="t-dense mt-2 text-muted">Fixed at the cited design width; no extent to choose.</p>}
+        <dl className="t-dense mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+          {Object.entries(i.paths).map(([v, p]) => (
+            <div key={v} className="contents">
+              <dt className="text-muted">{v === "ndci" ? "NDCI" : "Turbidity"}</dt>
+              <dd className={`flex items-center gap-1.5 ${p.path === "NOT_ESTIMABLE" ? "text-muted" : "text-ink"}`}>
+                {p.path === "NOT_ESTIMABLE" && <span aria-hidden className="hatch inline-block h-2 w-3" />}
+                {PATH_TEXT[p.path]}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <details className="t-dense mt-1.5">
+          <summary className="inline-flex cursor-pointer items-center gap-1 text-muted hover:text-ink">
+            <Chevron />
+            Why each path
+          </summary>
+          <div className="mt-1 flex flex-col gap-1 border-l border-hairline pl-2 text-muted">
+            {Object.entries(i.paths).map(([v, p]) => (
+              <p key={v} className="break-words">
+                <span className="text-ink">{v === "ndci" ? "NDCI" : "Turbidity"}:</span> {p.reason}
+              </p>
+            ))}
+          </div>
+        </details>
+        {allNotEstimable && s.enabled && <p className="t-dense mt-2 text-ink">This lever will return no estimate on this city: the model's response to it failed the check and no cited direct effect exists.</p>}
+        <p className="t-dense mt-3 text-muted">Effect size from</p>
+        <Citations list={i.citations} />
+        <p className="t-dense mt-3 text-muted">
+          Cost <span className="t-value-sm text-ink">{i.cost_per_unit.currency} {fmtNum(i.cost_per_unit.low, 0)}–{fmtNum(i.cost_per_unit.high, 0)}</span> per {i.cost_per_unit.unit} ({i.cost_per_unit.price_basis}).
+        </p>
+        <Citations list={i.cost_per_unit.citation} />
       </div>
-      <Citations list={i.citations} />
-      <p className="t-dense mt-1 text-muted">
-        Cost <span className="t-value-sm text-ink">{i.cost_per_unit.currency} {fmtNum(i.cost_per_unit.low, 0)}–{fmtNum(i.cost_per_unit.high, 0)}</span> per {i.cost_per_unit.unit} ({i.cost_per_unit.price_basis}).
-      </p>
-      <Citations list={i.cost_per_unit.citation} />
     </div>
   );
 }
@@ -325,16 +405,16 @@ function Lever({ i }: { i: InterventionInfo }) {
 /** Citations are a feature: shown as text, never behind an icon or tooltip. */
 function Citations({ list }: { list: Citation[] }) {
   return (
-    <ul className="t-dense mt-1.5 flex flex-col gap-1">
+    <ul className="t-dense mt-1 flex flex-col gap-1.5">
       {list.map((c, k) => (
-        <li key={k} className="border-l border-hairline pl-2">
+        <li key={k} className="border-l border-hairline pl-2 break-words">
           {c.authors} ({c.year}). {c.title}. <span className="italic">{c.source}</span>.{" "}
           {c.doi ? (
-            <a className="text-kf underline underline-offset-2" href={`https://doi.org/${c.doi}`} target="_blank" rel="noreferrer">
+            <a className="link" href={`https://doi.org/${c.doi}`} target="_blank" rel="noreferrer">
               doi:{c.doi}
             </a>
           ) : c.url ? (
-            <a className="text-kf underline underline-offset-2 break-all" href={c.url} target="_blank" rel="noreferrer">
+            <a className="link break-all" href={c.url} target="_blank" rel="noreferrer">
               {c.url}
             </a>
           ) : null}
@@ -358,7 +438,7 @@ function Results({ result }: { result: ScenarioResult }) {
   const costs = result.costs;
   const effectCites = result.citations.filter((c) => c.role !== "cost");
   return (
-    <section className="max-h-[42vh] shrink-0 overflow-y-auto border-t border-hairline px-4 py-3" aria-label="Scenario results">
+    <section className="shrink-0 border-t border-hairline px-4 py-4 md:max-h-[42vh] md:overflow-y-auto" aria-label="Scenario results">
       <div className="flex flex-wrap items-baseline gap-x-4">
         <h2 className="t-title">Results</h2>
         <p className="t-dense text-muted">
@@ -368,7 +448,14 @@ function Results({ result }: { result: ScenarioResult }) {
       </div>
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div>
-          <table className="mt-2 w-full t-dense">
+          {ok.length === 0 && (
+            <p className="t-ui mt-2 hatch-border border-l-2 pl-2 text-ink">
+              No selected reach produced an estimate. Driver-only reaches have no seasonal threshold, so exceedance days cannot be counted for them; this is a refusal, not a
+              zero. Clear and select coloured (optically observable) reaches.
+            </p>
+          )}
+          <div className={`overflow-x-auto ${ok.length === 0 ? "hidden" : ""}`}>
+          <table className="mt-2 w-full min-w-[560px] t-dense">
             <thead>
               <tr className="hairline-b text-left text-muted">
                 <th className="py-1 font-normal">Reach</th>
@@ -403,6 +490,7 @@ function Results({ result }: { result: ScenarioResult }) {
               ))}
             </tbody>
           </table>
+          </div>
           {ok.some((r) => r.delta_days !== null && Math.abs(r.delta_days) < 0.05) && (
             <p className="t-dense mt-2">
               A change of <span className="t-value-sm">0.0</span> is the estimate, not a failure: the cited effect sizes here are small (detention basins reduce peak flow by about 0.3 % in the cited study), or the lever could not be estimated on this reach.
@@ -410,7 +498,8 @@ function Results({ result }: { result: ScenarioResult }) {
           )}
           {other.length > 0 && (
             <details className="mt-2 t-dense" open={ok.length === 0}>
-              <summary className="cursor-pointer text-muted">
+              <summary className="inline-flex cursor-pointer items-center gap-1 text-muted hover:text-ink">
+                <Chevron />
                 {other.length} reach-variables without an estimate
               </summary>
               <ul className="mt-1">
@@ -492,7 +581,10 @@ function LeverFlags({ result }: { result: ScenarioResult }) {
       </ul>
       {flags.size > 0 && (
         <details className="mt-1">
-          <summary className="cursor-pointer text-muted">{flags.size} support warnings</summary>
+          <summary className="inline-flex cursor-pointer items-center gap-1 text-muted hover:text-ink">
+            <Chevron />
+            {flags.size} support warnings
+          </summary>
           <ul className="text-muted">
             {[...flags].map((f) => (
               <li key={f}>{f}</li>

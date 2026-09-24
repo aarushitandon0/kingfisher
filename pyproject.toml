@@ -84,6 +84,8 @@ packages = ["core", "pipeline", "models", "engine", "api"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# The Colab notebook is a run log for the EA-LSTM training, not product code.
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]

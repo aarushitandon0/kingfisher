@@ -4,8 +4,9 @@ import type { AttributionSeries, ReachDetail, Variable } from "../api/types";
 import { daysBetween, exposureLabel, fmtDay, fmtDistance, fmtNum, fmtProb, fmtRange, fmtSig, humanize, VARIABLE_LABEL } from "../lib/format";
 import { useApi } from "../lib/useApi";
 import { useStore } from "../store";
-import { AttributionBars, FanChart } from "./charts";
-import { ErrorNote, Loading, ObservabilityBadge, Rule, SeverityLabel } from "./bits";
+import { PROB_BREAKS } from "../lib/ramp";
+import { AttributionBars, FanChart, LOWER, RAISE } from "./charts";
+import { ErrorNote, Loading, ObservabilityBadge, RampGauge, Rule, Segmented, SeverityLabel } from "./bits";
 
 const VARS: Variable[] = ["turbidity_proxy", "ndci"];
 
@@ -23,21 +24,24 @@ export function ReachPanel({ id }: { id: string }) {
 
   return (
     <article className="flex flex-col" aria-label={`Reach ${id}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h2 className="t-display">{p?.name ?? (p ? "Unnamed channel" : id)}</h2>
-          <p className="t-ui text-muted">
-            {id}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="t-display break-words">{p?.name ?? (p ? "Unnamed channel" : id)}</h2>
+          <p className="t-ui mt-1 text-muted">
+            <span className="text-ink">{id}</span>
             {p?.strahler_order != null && <> — stream order {p.strahler_order}</>}
             {p && <> — {fmtNum(p.length_m, 0)} m long</>}
           </p>
         </div>
-        <button type="button" onClick={() => select(null)} className="t-ui text-muted hover:text-ink" aria-label="Close reach detail">
+        <button type="button" onClick={() => select(null)} className="btn btn-ghost btn-sm -mr-2 shrink-0" aria-label="Close reach detail" title="Close (Esc)">
+          <svg aria-hidden viewBox="0 0 12 12" width="12" height="12">
+            <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth="1.4" />
+          </svg>
           Close
         </button>
       </div>
 
-      {detail.loading && !d && <Loading what="reach" />}
+      {detail.loading && !d && <Loading what="reach" className="mt-4" />}
       <ErrorNote error={detail.error} what="Reach detail" />
 
       {d && p && (
@@ -47,22 +51,16 @@ export function ReachPanel({ id }: { id: string }) {
             <ObservabilityBadge observability={p.observability} medianPixels={p.median_water_pixels} />
           </div>
 
-          <div className="mt-4 flex gap-1" role="radiogroup" aria-label="Variable">
-            {VARS.map((v) => (
-              <button
-                key={v}
-                type="button"
-                role="radio"
-                aria-checked={variable === v}
-                onClick={() => setVariable(v)}
-                className={`t-dense border px-2 py-0.5 ${variable === v ? "border-ink text-ink" : "border-hairline text-muted hover:text-ink"}`}
-              >
-                {VARIABLE_LABEL[v]}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            dense
+            className="mt-5"
+            label="Variable"
+            value={variable}
+            onChange={setVariable}
+            options={VARS.map((v) => ({ value: v, label: VARIABLE_LABEL[v] }))}
+          />
 
-          <Rule>observed and 10-day forecast</Rule>
+          <Rule>Observed and 10-day forecast</Rule>
           <ErrorNote error={forecast.error} what="Forecast" />
           <FanChart variable={variable} history={p.history} series={series} />
           <p className="t-dense text-muted">
@@ -75,15 +73,15 @@ export function ReachPanel({ id }: { id: string }) {
             </p>
           ))}
 
-          <Rule>driver attribution</Rule>
+          <Rule>Driver attribution</Rule>
           {attribution.loading && <Loading what="attribution" />}
           <ErrorNote error={attribution.error} what="Attribution" />
           {attribution.data && <Attribution s={attribution.data.series.find((s) => s.variable === variable)} basis={attribution.data.basis} />}
 
-          <Rule>upstream catchment</Rule>
+          <Rule>Upstream catchment</Rule>
           <CatchmentCard d={d} />
 
-          <Rule>exposure within {p.exposure?.buffer_m ?? "—"} m</Rule>
+          <Rule>Exposure within {p.exposure?.buffer_m ?? "—"} m</Rule>
           <ExposureList d={d} />
         </>
       )}
@@ -98,7 +96,8 @@ function Reading({ d, window }: { d: ReachDetail; window: [string, string] | nul
     return (
       <div className="mt-4">
         <p className="t-reading">{fmtProb(p.p_exceed_max)}</p>
-        <p className="t-ui">
+        <RampGauge value={p.p_exceed_max} breaks={PROB_BREAKS} max={1} fmt={(v) => v.toFixed(1)} />
+        <p className="t-ui mt-2">
           peak exceedance probability, {VARIABLE_LABEL[which]}
           {window && (
             <>
@@ -143,8 +142,8 @@ function Attribution({ s, basis }: { s: AttributionSeries | undefined; basis: st
       </p>
       <AttributionBars items={s.contributions} units="index units" />
       <p className="t-dense mt-2 text-muted">
-        <span className="inline-block h-2 w-3 align-middle" style={{ background: "#9A6636" }} /> raises the forecast{" "}
-        <span className="ml-2 inline-block h-2 w-3 align-middle" style={{ background: "#6F97A3" }} /> lowers it. {basis}.
+        <span className="inline-block h-2 w-3 align-middle" style={{ background: RAISE }} /> raises the forecast{" "}
+        <span className="ml-2 inline-block h-2 w-3 align-middle" style={{ background: LOWER }} /> lowers it. {basis}.
       </p>
     </div>
   );
@@ -193,7 +192,9 @@ function CatchmentCard({ d }: { d: ReachDetail }) {
 
 function ExposureList({ d }: { d: ReachDetail }) {
   const e = d.properties.exposure;
-  if (!e) return <p className="t-ui text-muted">Exposure not computed for this reach. Run `make exposure`.</p>;
+  if (!e) return <p className="t-ui text-muted">
+        Exposure not computed for this reach. Run <code className="t-value-sm text-ink">make exposure</code>.
+      </p>;
   const rows = Object.entries(e.features).sort(
     (a, b) => (a[1].nearest_distance_m ?? Infinity) - (b[1].nearest_distance_m ?? Infinity),
   );

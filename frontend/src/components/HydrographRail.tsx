@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Variable } from "../api/types";
 import { addDays, fmtDay, fmtMonth, fmtSig, parseDate, VARIABLE_LABEL } from "../lib/format";
-import { INK, INK_MUTED, RAMP } from "../lib/ramp";
+import { HAIRLINE, INK, INK_MUTED, KINGFISHER, PAPER, RAMP } from "../lib/ramp";
 import type { TimelineIndex } from "../lib/timeline";
 import { useStore } from "../store";
+import { Segmented } from "./bits";
 
 const SPANS = [
   { id: "90d", label: "90 days", days: 90 },
@@ -92,17 +93,20 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
   }, [start, end]);
 
   const dragging = useRef(false);
+  // Where the pointer is, before any drag: shows the rail can be scrubbed and to which date.
+  const [hoverDate, setHoverDate] = useState<string | null>(null);
   function onPointer(e: React.PointerEvent<SVGSVGElement>, kind: "down" | "move" | "up") {
     if (kind === "down") {
       dragging.current = true;
       e.currentTarget.setPointerCapture(e.pointerId);
     }
     if (kind === "up") dragging.current = false;
+    const r = e.currentTarget.getBoundingClientRect();
+    const d = toDate(e.clientX - r.left);
     if (kind !== "up" && dragging.current) {
-      const r = e.currentTarget.getBoundingClientRect();
-      const d = toDate(e.clientX - r.left);
       if (d) setHead(d);
-    }
+      setHoverDate(null);
+    } else if (e.pointerType === "mouse") setHoverDate(d);
   }
   function onKey(e: React.KeyboardEvent) {
     if (!head) return;
@@ -126,31 +130,31 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
         : `${fmtDay(head, true)} — map shows the last clear-sky reading within 10 days, against its seasonal threshold`;
 
   return (
-    <section className="flex h-[172px] shrink-0 flex-col border-t border-hairline" aria-label="Hydrograph rail">
-      <div className="flex items-center gap-3 px-3 pt-1.5">
-        <span className="t-dense text-ink">
+    <section className="flex shrink-0 flex-col border-t border-hairline bg-paper" aria-label="Hydrograph rail">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 pt-2 pb-1">
+        <h2 className="t-dense font-medium text-ink">
           {selected ? `${selected}, ${VARIABLE_LABEL[railVariable]}` : "Clear-sky readings across the city"}
+        </h2>
+        <span className={`t-dense min-w-0 basis-full truncate sm:basis-auto sm:flex-1 ${railDate ? "text-kf" : "text-muted"}`} aria-live="polite">
+          {headLabel}
         </span>
-        <span className="t-dense truncate text-muted">{headLabel}</span>
-        <div className="ml-auto flex items-center gap-1">
-          {selected &&
-            (["turbidity_proxy", "ndci"] as Variable[]).map((v) => (
-              <button key={v} type="button" onClick={() => setRailVariable(v)} aria-pressed={railVariable === v} className={`t-dense whitespace-nowrap px-1.5 ${railVariable === v ? "text-ink underline underline-offset-4" : "text-muted hover:text-ink"}`}>
-                {v === "ndci" ? "NDCI" : "turbidity"}
-              </button>
-            ))}
-          <span className="mx-1 h-3 w-px bg-hairline" />
-          {SPANS.map((s) => (
-            <button key={s.id} type="button" onClick={() => setSpan(s.id)} aria-pressed={span === s.id} className={`t-dense whitespace-nowrap px-1.5 ${span === s.id ? "text-ink underline underline-offset-4" : "text-muted hover:text-ink"}`}>
-              {s.label}
-            </button>
-          ))}
-          <button type="button" onClick={() => setRailDate(null)} disabled={!railDate} className="t-dense ml-1 border border-hairline px-1.5 text-ink disabled:text-muted">
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          {selected && (
+            <Segmented
+              dense
+              label="Rail variable"
+              value={railVariable}
+              onChange={setRailVariable}
+              options={(["turbidity_proxy", "ndci"] as Variable[]).map((v) => ({ value: v, label: v === "ndci" ? "NDCI" : "Turbidity" }))}
+            />
+          )}
+          <Segmented dense label="Time span" value={span} onChange={setSpan} options={SPANS.map((s) => ({ value: s.id, label: s.label }))} />
+          <button type="button" onClick={() => setRailDate(null)} disabled={!railDate} className="btn btn-sm" title="Return the map to the current forecast">
             Now
           </button>
         </div>
       </div>
-      <div ref={wrap} className="relative min-h-0 flex-1">
+      <div ref={wrap} className="relative h-[140px]">
         {(loading || error || !x) && (
           <p className="t-dense absolute left-3 top-2 text-muted">{error ? `Timeline unavailable. ${error}` : loading ? "Loading timeline" : "No observations or forecast for this city."}</p>
         )}
@@ -170,6 +174,7 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
             onPointerDown={(e) => onPointer(e, "down")}
             onPointerMove={(e) => onPointer(e, "move")}
             onPointerUp={(e) => onPointer(e, "up")}
+            onPointerLeave={() => setHoverDate(null)}
             style={{ cursor: "ew-resize" }}
           >
             {/* month ticks */}
@@ -181,7 +186,7 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
                 </text>
               </g>
             ))}
-            <line x1={PAD.l} x2={w - PAD.r} y1={H - PAD.b} y2={H - PAD.b} stroke="#C8C5BB" />
+            <line x1={PAD.l} x2={w - PAD.r} y1={H - PAD.b} y2={H - PAD.b} stroke={HAIRLINE} />
 
             {selected ? (
               <>
@@ -234,16 +239,33 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
             {issued && (
               <g>
                 <line x1={x(issued)} x2={x(issued)} y1={PAD.t - 8} y2={H - PAD.b} stroke={INK} strokeWidth={1} />
-                <text x={x(issued) + 3} y={PAD.t - 10} fontSize={10} fill={INK}>
+                <text x={x(issued) > w - 30 ? x(issued) - 3 : x(issued) + 3} y={PAD.t - 10} fontSize={10} fill={INK} textAnchor={x(issued) > w - 30 ? "end" : "start"}>
                   now
+                </text>
+              </g>
+            )}
+            {/* pointer cursor: where a click or drag would put the head */}
+            {hoverDate && hoverDate !== head && (
+              <g pointerEvents="none">
+                <line x1={x(hoverDate)} x2={x(hoverDate)} y1={PAD.t - 4} y2={H - PAD.b} stroke={INK_MUTED} strokeDasharray="2 2" />
+                <rect
+                  x={x(hoverDate) > w - 90 ? x(hoverDate) - 76 : x(hoverDate) + 4}
+                  y={PAD.t - 2}
+                  width={72}
+                  height={14}
+                  fill={PAPER}
+                  stroke={HAIRLINE}
+                />
+                <text x={x(hoverDate) > w - 90 ? x(hoverDate) - 40 : x(hoverDate) + 40} y={PAD.t + 8} fontSize={10} textAnchor="middle" fill={INK} fontFamily="IBM Plex Mono">
+                  {fmtDay(hoverDate, true)}
                 </text>
               </g>
             )}
             {/* the head */}
             {head && head !== issued && (
               <g>
-                <line x1={x(head)} x2={x(head)} y1={PAD.t - 8} y2={H - PAD.b} stroke="#1B6B8C" strokeWidth={2} />
-                <rect x={x(head) - 4} y={PAD.t - 12} width={8} height={8} fill="#1B6B8C" />
+                <line x1={x(head)} x2={x(head)} y1={PAD.t - 8} y2={H - PAD.b} stroke={KINGFISHER} strokeWidth={2} />
+                <rect x={x(head) - 5} y={PAD.t - 13} width={10} height={10} fill={KINGFISHER} />
               </g>
             )}
           </svg>

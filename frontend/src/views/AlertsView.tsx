@@ -1,9 +1,9 @@
 import { Fragment, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { AlertSummary, AlertsResponse, Severity } from "../api/types";
-import { ErrorNote, Loading, severityBorder, SeverityLabel } from "../components/bits";
+import { Chevron, ErrorNote, Loading, PageHeader, severityBorder, SeverityLabel, Stat } from "../components/bits";
 import { AttributionBars } from "../components/charts";
-import { exposureLabel, fmtDay, fmtDistance, fmtProb, fmtRange, fmtSig, humanize, plural, VARIABLE_LABEL } from "../lib/format";
+import { exposureLabel, fmtDay, fmtDistance, fmtProb, fmtRange, fmtSig, humanize, VARIABLE_LABEL } from "../lib/format";
 import { useApi } from "../lib/useApi";
 import { useStore } from "../store";
 
@@ -27,80 +27,103 @@ export function AlertsView({ city }: { city: string }) {
   const [shown, setShown] = useState<Record<Severity, boolean>>({ ALERT: true, WATCH: true, INSUFFICIENT_EVIDENCE: true });
   const [open, setOpen] = useState<string | null>(null);
   const r = res.data;
-  const rows = useMemo(() => (r?.alerts ?? []).filter((a) => shown[a.severity]), [r, shown]);
+  // Grouped by severity for scanning; within a group the API's order is kept.
+  const groups = useMemo(
+    () => SEVERITIES.filter((s) => shown[s]).map((s) => [s, (r?.alerts ?? []).filter((a) => a.severity === s)] as const),
+    [r, shown],
+  );
+  const empty = groups.every(([, g]) => g.length === 0);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
-      <div className="max-w-6xl">
-        <h1 className="t-title">Alerts</h1>
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8">
+      <div className="max-w-7xl">
+        <PageHeader title="Alerts">
+          {r?.alert_run === "OK" && (
+            <>
+              Latest run, issued <span className="t-value-sm text-ink">{fmtDay(r.alert_run_issued_date, true)}</span>.
+            </>
+          )}
+        </PageHeader>
         {res.loading && <Loading what="alerts" />}
         <ErrorNote error={res.error} what="Alerts" />
-        {r && <RunSummary r={r} />}
+        {r && <RunSummary r={r} shown={shown} toggle={(s) => setShown({ ...shown, [s]: !shown[s] })} />}
 
         {r && r.alert_run === "OK" && (
           <>
-            <fieldset className="mt-4 flex flex-wrap gap-4 t-ui">
-              <legend className="sr-only">Show severities</legend>
-              {SEVERITIES.map((s) => (
-                <label key={s} className="flex items-center gap-1.5">
-                  <input type="checkbox" checked={shown[s]} onChange={() => setShown({ ...shown, [s]: !shown[s] })} />
-                  <SeverityLabel s={s} /> <span className="t-value-sm text-muted">{r.counts[s]}</span>
-                </label>
-              ))}
-            </fieldset>
-
-            <table className="mt-3 w-full t-dense">
-              <thead>
-                <tr className="hairline-b text-left text-muted">
-                  <th className="py-1.5 pl-3 font-normal">Reach</th>
-                  <th className="py-1.5 font-normal">Severity</th>
-                  <th className="py-1.5 font-normal">Variable</th>
-                  <th className="py-1.5 pr-4 text-right font-normal">Probability</th>
-                  <th className="py-1.5 font-normal">Window</th>
-                  <th className="hidden py-1.5 font-normal md:table-cell">Exposure</th>
-                  <th className="py-1.5 font-normal">
-                    <span className="sr-only">Expand</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((a) => {
-                  const b = severityBorder(a.severity);
-                  const isOpen = open === a.alert_id;
-                  return (
-                    <Fragment key={a.alert_id}>
-                      <tr className="hairline-b align-top">
-                        <td className={`py-1.5 pl-3 ${b.className}`} style={b.style}>
-                          <span className="text-ink">{a.reach_id}</span> <span className="text-muted">{a.reach_name ?? ""}</span>
-                        </td>
-                        <td className="py-1.5">
-                          <SeverityLabel s={a.severity} />
-                        </td>
-                        <td className="py-1.5 text-muted">{VARIABLE_LABEL[a.variable] ?? a.variable}</td>
-                        <td className="py-1.5 pr-4 text-right t-value-sm">{a.exceedance_prob !== null ? fmtProb(a.exceedance_prob) : <span className="text-muted">withheld</span>}</td>
-                        <td className="py-1.5 t-value-sm">{fmtRange(a.window_start, a.window_end)}</td>
-                        <td className="hidden py-1.5 text-muted md:table-cell">
-                          {a.severity === "INSUFFICIENT_EVIDENCE" ? <span className="text-ink">{reasonText(a.suppressed_reason)}</span> : exposureSummary(a.exposure)}
-                        </td>
-                        <td className="py-1.5 pr-2 text-right">
-                          <button type="button" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : a.alert_id)} className="text-muted hover:text-ink">
-                            {isOpen ? "Close" : "Details"}
-                          </button>
-                        </td>
+            <div className="mt-6 overflow-x-auto md:overflow-visible">
+              <table className="w-full min-w-[900px] t-dense">
+                <thead className="sticky top-0 z-10 bg-paper">
+                  <tr className="text-left text-muted shadow-[inset_0_-1px_0_var(--hairline)]">
+                    <th scope="col" className="py-2 pr-4 pl-3 font-normal">Reach</th>
+                    <th scope="col" className="py-2 pr-4 font-normal">Severity</th>
+                    <th scope="col" className="py-2 pr-4 font-normal">Variable</th>
+                    <th scope="col" className="py-2 pr-4 text-right font-normal">Probability</th>
+                    <th scope="col" className="py-2 pr-4 font-normal">Window</th>
+                    <th scope="col" className="py-2 font-normal">Exposure or reason</th>
+                    <th scope="col" className="py-2 font-normal">
+                      <span className="sr-only">Expand</span>
+                    </th>
+                  </tr>
+                </thead>
+                {groups.map(([s, rows]) =>
+                  rows.length === 0 ? null : (
+                    <tbody key={s}>
+                      <tr>
+                        <th scope="colgroup" colSpan={7} className="hairline-b bg-paper-alt py-1.5 pl-3 text-left font-normal">
+                          <SeverityLabel s={s} /> <span className="t-value-sm ml-1 text-muted">{rows.length}</span>
+                        </th>
                       </tr>
-                      {isOpen && (
-                        <tr className="hairline-b">
-                          <td colSpan={7} className={`pb-4 pl-3 ${b.className}`} style={b.style}>
-                            <AlertDetailBlock id={a.alert_id} />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-            {!rows.length && <p className="t-ui mt-3 text-muted">No alerts of the selected severities in this run.</p>}
+                      {rows.map((a) => {
+                        const b = severityBorder(a.severity);
+                        const isOpen = open === a.alert_id;
+                        const toggle = () => setOpen(isOpen ? null : a.alert_id);
+                        return (
+                          <Fragment key={a.alert_id}>
+                            <tr className={`hairline-b cursor-pointer align-top hover:bg-paper-alt ${isOpen ? "bg-paper-alt" : ""}`} onClick={toggle}>
+                              <td className={`py-2 pr-4 pl-3 ${b.className}`} style={b.style}>
+                                <span className="text-ink">{a.reach_id}</span> <span className="text-muted">{a.reach_name ?? ""}</span>
+                              </td>
+                              <td className="py-2 pr-4 whitespace-nowrap">
+                                <SeverityLabel s={a.severity} />
+                              </td>
+                              <td className="py-2 pr-4 whitespace-nowrap text-muted">{VARIABLE_LABEL[a.variable] ?? a.variable}</td>
+                              <td className="py-2 pr-4 text-right t-value-sm">{a.exceedance_prob !== null ? fmtProb(a.exceedance_prob) : <span className="text-muted">withheld</span>}</td>
+                              <td className="py-2 pr-4 t-value-sm whitespace-nowrap">{fmtRange(a.window_start, a.window_end)}</td>
+                              <td className="py-2 pr-2 text-muted">
+                                {a.severity === "INSUFFICIENT_EVIDENCE" ? <span className="text-ink">{reasonText(a.suppressed_reason)}</span> : exposureSummary(a.exposure)}
+                              </td>
+                              <td className="py-1 pr-1 text-right">
+                                <button
+                                  type="button"
+                                  aria-expanded={isOpen}
+                                  aria-label={`${isOpen ? "Hide" : "Show"} details for ${a.reach_id}, ${VARIABLE_LABEL[a.variable] ?? a.variable}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggle();
+                                  }}
+                                  className="btn btn-ghost btn-sm"
+                                >
+                                  <Chevron />
+                                  Details
+                                </button>
+                              </td>
+                            </tr>
+                            {isOpen && (
+                              <tr className="hairline-b bg-paper-alt">
+                                <td colSpan={7} className={`pr-3 pb-5 pl-3 ${b.className}`} style={b.style}>
+                                  <AlertDetailBlock id={a.alert_id} />
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  ),
+                )}
+              </table>
+            </div>
+            {empty && <p className="t-ui mt-3 text-muted">No alerts of the selected severities in this run. Select a reading above to show its rows.</p>}
           </>
         )}
       </div>
@@ -114,26 +137,48 @@ function reasonText(reason: string | null): string {
   return rest.length ? `${humanize(code)}: ${rest.join(":").trim()}` : humanize(code);
 }
 
-function RunSummary({ r }: { r: AlertsResponse }) {
+function RunSummary({ r, shown, toggle }: { r: AlertsResponse; shown: Record<Severity, boolean>; toggle: (s: Severity) => void }) {
   if (r.alert_run === "NO_ALERT_RUN")
     return (
       <p className="t-body mt-2 text-muted">
-        No alert run on record for this city. This is not "no alerts": nothing has been assessed. Run <code className="t-value-sm">make alerts city={r.city}</code>.
+        No alert run on record for this city. This is not "no alerts": nothing has been assessed. Run <code className="t-value-sm text-ink">make alerts city={r.city}</code>.
       </p>
     );
   const supp = Object.entries(r.suppressed ?? {});
   return (
-    <div className="t-body mt-1">
-      <p>
-        Run issued {fmtDay(r.alert_run_issued_date, true)}: <span className="text-alert">{plural(r.counts.ALERT, "alert")}</span>, {plural(r.counts.WATCH, "watch", "watches")},{" "}
-        {r.counts.INSUFFICIENT_EVIDENCE} reach-variables with insufficient evidence to issue either.
-      </p>
-      {supp.length > 0 && (
-        <p className="t-ui text-muted">
-          Guardrails stopped {supp.map(([g, n]) => `${n} on ${g}`).join(", ")} before they became alerts. Those are counted, not listed.
-        </p>
-      )}
-      <p className="t-ui text-muted">
+    <div>
+      <fieldset>
+        <legend className="t-dense mb-2 text-muted">Select a reading to show or hide its rows.</legend>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          <Stat label={<SeverityLabel s="ALERT" />} value={r.counts.ALERT} note={r.counts.ALERT === 1 ? "alert" : "alerts"} severity="ALERT" pressed={shown.ALERT} onToggle={() => toggle("ALERT")} />
+          <Stat label={<SeverityLabel s="WATCH" />} value={r.counts.WATCH} note={r.counts.WATCH === 1 ? "watch" : "watches"} severity="WATCH" pressed={shown.WATCH} onToggle={() => toggle("WATCH")} />
+          <Stat
+            label={<SeverityLabel s="INSUFFICIENT_EVIDENCE" />}
+            value={r.counts.INSUFFICIENT_EVIDENCE}
+            note="reach-variables with too little evidence to issue either"
+            severity="INSUFFICIENT_EVIDENCE"
+            pressed={shown.INSUFFICIENT_EVIDENCE}
+            onToggle={() => toggle("INSUFFICIENT_EVIDENCE")}
+          />
+          {supp.length > 0 && (
+            <Stat
+              label={<span className="text-muted">Stopped by guardrails</span>}
+              value={
+                <span className="flex flex-wrap gap-x-4">
+                  {supp.map(([g, n]) => (
+                    <span key={g}>
+                      {n}
+                      <span className="t-dense ml-1 font-sans text-muted">{g}</span>
+                    </span>
+                  ))}
+                </span>
+              }
+              note="counted before they became alerts, not listed"
+            />
+          )}
+        </div>
+      </fieldset>
+      <p className="t-ui mt-3 max-w-4xl text-muted">
         Insufficient evidence is an output, not a gap in the table: the system declines to alert where it cannot see the water or has no threshold to judge it by.
       </p>
     </div>
@@ -143,12 +188,12 @@ function RunSummary({ r }: { r: AlertsResponse }) {
 function AlertDetailBlock({ id }: { id: string }) {
   const res = useApi(`alert:${id}`, () => api.alert(id));
   const a = res.data;
-  if (res.loading) return <Loading what="alert" />;
+  if (res.loading) return <Loading what="alert" className="pt-3" />;
   if (res.error) return <ErrorNote error={res.error} what="Alert detail" />;
   if (!a) return null;
   const feats = (a.exposure?.features ?? {}) as Record<string, { count: number | null; nearest_distance_m: number | null }>;
   return (
-    <div className="grid gap-6 pt-2 md:grid-cols-[1.2fr_1fr_1fr]">
+    <div className="grid gap-6 pt-3 md:grid-cols-[1.2fr_1fr_1fr]">
       <section>
         <h3 className="t-ui mb-1 text-ink">Attribution</h3>
         {a.severity === "INSUFFICIENT_EVIDENCE" ? (
@@ -220,14 +265,14 @@ function AlertDetailBlock({ id }: { id: string }) {
           </tbody>
         </table>
         <p className="t-dense mt-1 text-muted">Pathways and proximity only. No health outcome is predicted; no water is declared safe or unsafe.</p>
-        <p className="t-dense mt-2">
-          <a className="text-kf underline underline-offset-2" href={`/api/export/fhir/${a.alert_id}`} target="_blank" rel="noreferrer">
-            FHIR bundle
-          </a>{" "}
-          <button type="button" className="ml-2 text-kf underline underline-offset-2" onClick={() => { useStore.getState().select(a.reach_id); useStore.getState().setView("map"); }}>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => { useStore.getState().select(a.reach_id); useStore.getState().setView("map"); }}>
             Open reach on map
           </button>
-        </p>
+          <a className="btn btn-sm" href={`/api/export/fhir/${a.alert_id}`} target="_blank" rel="noreferrer">
+            FHIR bundle
+          </a>
+        </div>
       </section>
     </div>
   );
