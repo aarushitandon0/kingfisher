@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Variable } from "../api/types";
 import { addDays, fmtDay, fmtMonth, fmtSig, parseDate, VARIABLE_LABEL } from "../lib/format";
-import { HAIRLINE, INK, INK_MUTED, KINGFISHER, PAPER, RAMP } from "../lib/ramp";
+import { BRAND, HAIRLINE, INK, INK_MUTED, KINGFISHER, PAPER, RAMP } from "../lib/ramp";
 import type { TimelineIndex } from "../lib/timeline";
 import { useStore } from "../store";
 import { Segmented } from "./bits";
@@ -130,9 +130,9 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
         : `${fmtDay(head, true)} — map shows the last clear-sky reading within 10 days, against its seasonal threshold`;
 
   return (
-    <section className="flex shrink-0 flex-col border-t border-hairline bg-paper" aria-label="Hydrograph rail">
+    <section className="flex shrink-0 flex-col border-t border-hairline bg-surface" aria-label="Hydrograph rail">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 pt-2 pb-1">
-        <h2 className="t-dense font-medium text-ink">
+        <h2 className="t-eyebrow">
           {selected ? `${selected}, ${VARIABLE_LABEL[railVariable]}` : "Clear-sky readings across the city"}
         </h2>
         <span className={`t-dense min-w-0 basis-full truncate sm:basis-auto sm:flex-1 ${railDate ? "text-kf" : "text-muted"}`} aria-live="polite">
@@ -205,10 +205,10 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
                         [...fcRows].reverse().map(([d, r]) => `L${x(d)},${y(r!.p10 ?? r!.p50 ?? lo)}`).join("") +
                         "Z"
                       }
-                      fill={RAMP.turbid}
-                      fillOpacity={0.3}
+                      fill={BRAND}
+                      fillOpacity={0.18}
                     />
-                    <path d={fcRows.map(([d, r], i) => `${i ? "L" : "M"}${x(d)},${y(r!.p50 ?? lo)}`).join("")} fill="none" stroke={RAMP.heavy} strokeWidth={2} />
+                    <path d={fcRows.map(([d, r], i) => `${i ? "L" : "M"}${x(d)},${y(r!.p50 ?? lo)}`).join("")} fill="none" stroke={BRAND} strokeWidth={2} />
                     {fcRows[0][1]!.thr !== null && (
                       <line x1={x(fcRows[0][0])} x2={x(fcRows.at(-1)![0])} y1={y(fcRows[0][1]!.thr!)} y2={y(fcRows[0][1]!.thr!)} stroke={INK_MUTED} strokeDasharray="4 3" />
                     )}
@@ -226,7 +226,7 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
               </>
             ) : (
               counts.map(([d, n]) => (
-                <line key={d} x1={x(d)} x2={x(d)} y1={H - PAD.b} y2={H - PAD.b - (n / maxCount) * (H - PAD.t - PAD.b)} stroke={RAMP.clear} strokeWidth={1.5} />
+                <line key={d} x1={x(d)} x2={x(d)} y1={H - PAD.b} y2={H - PAD.b - (n / maxCount) * (H - PAD.t - PAD.b)} stroke={RAMP.slight} strokeWidth={1.5} />
               ))
             )}
             {!selected && (
@@ -265,7 +265,7 @@ export function HydrographRail({ ix, loading, error }: { ix: TimelineIndex | nul
             {head && head !== issued && (
               <g>
                 <line x1={x(head)} x2={x(head)} y1={PAD.t - 8} y2={H - PAD.b} stroke={KINGFISHER} strokeWidth={2} />
-                <rect x={x(head) - 5} y={PAD.t - 13} width={10} height={10} fill={KINGFISHER} />
+                <rect x={x(head) - 5} y={PAD.t - 13} width={10} height={10} rx={2} fill={KINGFISHER} />
               </g>
             )}
           </svg>

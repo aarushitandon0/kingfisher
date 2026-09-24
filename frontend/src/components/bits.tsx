@@ -7,8 +7,8 @@ import { rampColor, SEVERITY_COLOR } from "../lib/ramp";
  * so screen-reader users can jump between sections. */
 export function Rule({ children, as: Tag = "h3" }: { children: ReactNode; as?: "h2" | "h3" | "h4" | "p" }) {
   return (
-    <div className="mt-6 mb-2 flex items-center gap-2">
-      <Tag className="t-dense shrink-0 font-medium text-ink">{children}</Tag>
+    <div className="mt-7 mb-2 flex items-center gap-2">
+      <Tag className="t-eyebrow shrink-0">{children}</Tag>
       <span className="h-px flex-1 bg-hairline" />
     </div>
   );
@@ -17,9 +17,9 @@ export function Rule({ children, as: Tag = "h3" }: { children: ReactNode; as?: "
 /** Page title + one line of context. Page titles sit one step above section titles. */
 export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <header className="mb-5">
+    <header className="mb-6">
       <h1 className="t-display">{title}</h1>
-      {children && <div className="t-ui mt-1 max-w-4xl text-muted">{children}</div>}
+      {children && <div className="t-ui mt-1.5 max-w-4xl text-muted">{children}</div>}
     </header>
   );
 }
@@ -29,7 +29,7 @@ export function ObservabilityBadge({ observability, medianPixels }: { observabil
   if (observability === "OPTICALLY_OBSERVABLE")
     return (
       <p className="t-ui flex items-baseline gap-2">
-        <span aria-hidden className="inline-block h-2 w-2 shrink-0 rotate-45 bg-ink" />
+        <span aria-hidden className="inline-block h-2 w-2 shrink-0 rotate-45 bg-brand" />
         <span>
           Optically observable
           {medianPixels != null && (
@@ -44,7 +44,7 @@ export function ObservabilityBadge({ observability, medianPixels }: { observabil
   if (observability === "DRIVER_ONLY")
     return (
       <p className="t-ui flex items-baseline gap-2">
-        <span aria-hidden className="inline-block h-2 w-2 shrink-0 rotate-45 border border-ink" />
+        <span aria-hidden className="inline-block h-2 w-2 shrink-0 rotate-45 border border-brand" />
         <span>
           Driver-predicted
           <span className="text-muted">
@@ -65,16 +65,19 @@ export function severityBorder(s: Severity | null): { className: string; style?:
   return { className: "border-l-[3px]", style: { borderLeftColor: SEVERITY_COLOR[s] } };
 }
 
-export function SeverityLabel({ s }: { s: Severity }) {
-  if (s === "ALERT") return <span className="text-alert">Alert</span>;
-  if (s === "WATCH") return <span className="text-watch-text">Watch</span>;
-  return <span className="text-muted">Insufficient evidence</span>;
+const PILL: Record<Severity, string> = { ALERT: "pill-alert", WATCH: "pill-watch", INSUFFICIENT_EVIDENCE: "pill-insufficient" };
+const SEVERITY_TEXT: Record<Severity, string> = { ALERT: "text-alert", WATCH: "text-watch-text", INSUFFICIENT_EVIDENCE: "text-muted" };
+
+/** Severity as a pill: tinted ground, severity-coloured text, a dot. */
+export function SeverityLabel({ s, small = false }: { s: Severity; small?: boolean }) {
+  const text = s === "ALERT" ? "Alert" : s === "WATCH" ? "Watch" : "Insufficient evidence";
+  return <span className={`pill ${PILL[s]} ${small ? "pill-sm" : ""}`}>{text}</span>;
 }
 
 export function ErrorNote({ error, what }: { error: ApiError | null; what: string }) {
   if (!error) return null;
   return (
-    <div role="alert" className="t-ui my-2 border-l-2 border-ink bg-paper-alt py-2 pr-3 pl-3">
+    <div role="alert" className="t-ui my-2 rounded-md border-l-[3px] border-alert bg-paper-alt py-2 pr-3 pl-3">
       <p className="font-medium text-ink">{what} unavailable.</p>
       <p className="text-muted">{error.detail}</p>
     </div>
@@ -90,17 +93,18 @@ export function Loading({ what, className = "" }: { what: string; className?: st
   );
 }
 
-export function Swatch({ color, hatch, dashed }: { color?: string; hatch?: boolean; dashed?: boolean }) {
-  if (hatch) return <span aria-hidden className="hatch inline-block h-2.5 w-5 align-middle" />;
+/** A line swatch; `width` matches the map's line weight for that band. */
+export function Swatch({ color, hatch, dashed, width = 3 }: { color?: string; hatch?: boolean; dashed?: boolean; width?: number }) {
+  if (hatch) return <span aria-hidden className="hatch inline-block h-2.5 w-6 rounded-[2px] align-middle" />;
   if (dashed)
     return (
       <span
         aria-hidden
-        className="inline-block h-0.5 w-5 align-middle"
+        className="inline-block h-0.5 w-6 align-middle"
         style={{ backgroundImage: `repeating-linear-gradient(90deg, ${color} 0 6px, transparent 6px 10px)` }}
       />
     );
-  return <span aria-hidden className="inline-block h-[3px] w-5 align-middle" style={{ background: color }} />;
+  return <span aria-hidden className="inline-block w-6 rounded-full align-middle" style={{ background: color, height: width }} />;
 }
 
 /** Disclosure chevron; rotates with the aria-expanded / details[open] state it sits in. */
@@ -146,7 +150,7 @@ export function Segmented<T extends string>({
     refs.current[next]?.focus();
   }
   return (
-    <div role="radiogroup" aria-label={label} onKeyDown={onKey} className={`inline-flex max-w-full shrink-0 self-start border border-hairline bg-paper ${className}`}>
+    <div role="radiogroup" aria-label={label} onKeyDown={onKey} className={`inline-flex max-w-full shrink-0 self-start rounded-md bg-paper-alt p-0.5 ${className}`}>
       {options.map((o, i) => {
         const on = i === idx;
         return (
@@ -160,8 +164,8 @@ export function Segmented<T extends string>({
             aria-checked={on}
             tabIndex={on ? 0 : -1}
             onClick={() => onChange(o.value)}
-            className={`${dense ? "t-dense h-7 px-2" : "t-ui h-8 px-3"} whitespace-nowrap ${i ? "border-l border-hairline" : ""} ${
-              on ? "bg-paper-alt text-ink shadow-[inset_0_-2px_0_var(--kingfisher)]" : "text-muted hover:bg-paper-alt hover:text-ink"
+            className={`${dense ? "t-dense h-6 px-2" : "t-ui h-7 px-3"} rounded-[5px] font-medium whitespace-nowrap ${
+              on ? "bg-surface text-brand shadow-[0_1px_2px_rgba(0,0,0,0.08),0_0_0_1px_var(--border)]" : "text-muted hover:text-ink"
             }`}
           >
             {o.label}
@@ -179,11 +183,11 @@ export function RampGauge({ value, breaks, max, fmt }: { value: number; breaks: 
   const pos = Math.min(1, Math.max(0, value / max)) * 100;
   return (
     <div aria-hidden className="mt-2 max-w-[280px]">
-      <div className="relative flex h-1.5">
+      <div className="relative flex h-1.5 overflow-visible [&>span:first-child]:rounded-l-full [&>span:nth-last-child(2)]:rounded-r-full">
         {edges.slice(0, -1).map((a, i) => (
           <span key={a} style={{ width: `${((edges[i + 1] - a) / max) * 100}%`, background: rampColor((a + edges[i + 1]) / 2, breaks) }} />
         ))}
-        <span className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 bg-ink" style={{ left: `${pos}%` }} />
+        <span className="absolute -top-1 -bottom-1 w-0.5 -translate-x-1/2 rounded-full bg-ink" style={{ left: `${pos}%` }} />
       </div>
       <div className="relative mt-1 h-3 font-mono text-[10px] leading-3 text-muted">
         {breaks.map((b) => (
@@ -196,12 +200,14 @@ export function RampGauge({ value, breaks, max, fmt }: { value: number; breaks: 
   );
 }
 
-/** A counted reading: label, a mono number, a 3px severity edge. Optionally a filter toggle. */
+/** A counted reading: label, a mono number in its severity colour, a 3px top edge.
+ * Optionally a filter toggle. */
 export function Stat({
   label,
   value,
   note,
   severity,
+  tone = "neutral",
   pressed,
   onToggle,
 }: {
@@ -209,34 +215,37 @@ export function Stat({
   value: ReactNode;
   note?: ReactNode;
   severity?: Severity | null;
+  /** Counts that are not severities can carry the brand instead. */
+  tone?: "brand" | "neutral";
   pressed?: boolean;
   onToggle?: () => void;
 }) {
-  const b: { className: string; style?: React.CSSProperties } = severity ? severityBorder(severity) : { className: "" };
+  const off = onToggle && !pressed;
+  const edge = severity === "INSUFFICIENT_EVIDENCE" ? undefined : severity ? SEVERITY_COLOR[severity] : tone === "brand" ? "var(--brand-500)" : "var(--border)";
   const body = (
     <>
+      {/* 3px top edge in the severity colour; hatched for insufficient evidence. */}
+      <span aria-hidden className={`absolute inset-x-0 top-0 h-[3px] ${severity === "INSUFFICIENT_EVIDENCE" ? "hatch" : ""}`} style={{ background: edge }} />
       <span className="t-dense flex items-center gap-1.5">
         {onToggle && (
-          <span
-            aria-hidden
-            className={`inline-block h-3 w-3 shrink-0 border ${pressed ? "border-kf bg-kf shadow-[inset_0_0_0_2px_var(--chart-paper)]" : "border-muted bg-paper"}`}
-          />
+          <span aria-hidden className={`inline-grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[3px] border ${pressed ? "border-brand bg-brand" : "border-faint bg-surface"}`}>
+            {pressed && (
+              <svg viewBox="0 0 10 10" width="8" height="8">
+                <path d="M1.5 5.2 4 7.5l4.5-5" fill="none" stroke="var(--on-brand)" strokeWidth="1.8" />
+              </svg>
+            )}
+          </span>
         )}
         {label}
       </span>
-      <span className={`t-reading mt-1 block ${onToggle && !pressed ? "text-muted" : ""}`}>{value}</span>
+      <span className={`t-reading mt-1.5 block ${off ? "opacity-45" : ""} ${severity ? SEVERITY_TEXT[severity] : tone === "brand" ? "text-brand" : "text-ink"}`}>{value}</span>
       {note && <span className="t-dense mt-0.5 block text-muted">{note}</span>}
     </>
   );
-  const cls = `flex min-w-0 flex-col items-stretch justify-start border border-hairline py-2.5 pr-3 pl-3 text-left ${b.className}`;
-  if (!onToggle)
-    return (
-      <div className={cls} style={b.style}>
-        {body}
-      </div>
-    );
+  const cls = "card relative flex min-w-0 flex-col items-stretch justify-start overflow-hidden pt-3.5 pr-3 pb-3 pl-3 text-left";
+  if (!onToggle) return <div className={cls}>{body}</div>;
   return (
-    <button type="button" aria-pressed={pressed} onClick={onToggle} className={`${cls} ctl hover:bg-paper-alt ${pressed ? "" : "bg-paper-alt/50"}`} style={b.style}>
+    <button type="button" aria-pressed={pressed} onClick={onToggle} className={`${cls} ctl hover:shadow-[var(--shadow-float)] ${off ? "bg-paper-alt" : ""}`}>
       {body}
     </button>
   );

@@ -1,92 +1,135 @@
 import type { StyleSpecification } from "maplibre-gl";
-import { HAIRLINE, INK_MUTED, PAPER } from "../lib/ramp";
+import { PALETTE, type Palette, type Theme } from "../lib/ramp";
 
-// OpenFreeMap Positron (no key, OSM data), recoloured to chart paper: the basemap is a
-// quiet ground so the sediment ramp owns every coloured pixel on the map.
+// OpenFreeMap Positron (no key, OSM data), recoloured: desaturated land, water that reads
+// as water, and a faint hillshade for relief. The basemap stays quiet so the exceedance
+// ramp owns the saturated pixels on the map.
 const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
+// Open terrain tiles (Mapzen Terrarium on AWS Open Data), no key.
+const DEM_TILES = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
 
-const PAPER_DEEP = "#E9E6DD";
-const LAND_GREEN = "#E3E4D6";
-const WATER_BODY = "#D9DFDC";
-const ROAD = "#FBFAF6";
-const ROAD_CASING = "#DAD6CB";
-const BUILDING = "#E4E1D7";
+const raw: { p: Promise<StyleSpecification | null> | null } = { p: null };
+const styles = new Map<Theme, Promise<StyleSpecification>>();
 
-let styleP: Promise<StyleSpecification> | null = null;
-
-export function chartPaperStyle(): Promise<StyleSpecification> {
-  styleP ??= fetch(STYLE_URL)
+function fetchRaw(): Promise<StyleSpecification | null> {
+  raw.p ??= fetch(STYLE_URL)
     .then((r) => {
       if (!r.ok) throw new Error(`basemap style: HTTP ${r.status}`);
       return r.json() as Promise<StyleSpecification>;
     })
-    .then(recolour)
     .catch((e) => {
-      styleP = null;
-      console.warn("basemap unavailable, drawing on blank paper", e);
-      return blankPaper();
+      raw.p = null;
+      console.warn("basemap unavailable, drawing on a blank ground", e);
+      return null;
     });
-  return styleP;
+  return raw.p;
 }
 
-function blankPaper(): StyleSpecification {
+export function basemapStyle(theme: Theme): Promise<StyleSpecification> {
+  let s = styles.get(theme);
+  if (!s) {
+    const pal = PALETTE[theme];
+    s = fetchRaw().then((st) => {
+      if (!st) {
+        styles.delete(theme);
+        return blank(pal);
+      }
+      return recolour(st, pal);
+    });
+    styles.set(theme, s);
+  }
+  return s;
+}
+
+function blank(p: Palette): StyleSpecification {
   return {
     version: 8,
     glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
     sources: {},
-    layers: [{ id: "background", type: "background", paint: { "background-color": PAPER } }],
+    layers: [{ id: "background", type: "background", paint: { "background-color": p.bg } }],
   };
 }
 
 type AnyLayer = StyleSpecification["layers"][number] & { paint?: Record<string, unknown>; layout?: Record<string, unknown> };
 
-function recolour(style: StyleSpecification): StyleSpecification {
+function recolour(style: StyleSpecification, c: Palette): StyleSpecification {
   const layers: AnyLayer[] = [];
-  for (const raw of style.layers as AnyLayer[]) {
-    const l = { ...raw, paint: { ...(raw.paint ?? {}) }, layout: { ...(raw.layout ?? {}) } } as AnyLayer;
+  let hillshadeAt = -1;
+  for (const src of style.layers as AnyLayer[]) {
+    const l = { ...src, paint: { ...(src.paint ?? {}) }, layout: { ...(src.layout ?? {}) } } as AnyLayer;
     const id = l.id;
     if (l.type === "raster" || id.startsWith("highway-shield") || id.startsWith("road_shield") || id === "airport" || id === "label_other") continue;
     const p = l.paint!;
-    if (l.type === "background") p["background-color"] = PAPER;
+    if (l.type === "background") p["background-color"] = c.bg;
     else if (id === "water") {
-      p["fill-color"] = WATER_BODY;
+      p["fill-color"] = c.water;
       delete p["fill-outline-color"];
+      // Relief goes under the water and everything built.
+      if (hillshadeAt < 0) hillshadeAt = layers.length;
     } else if (id === "waterway") {
-      // The network we draw IS the waterway layer; the basemap's is a faint guide only.
-      p["line-color"] = WATER_BODY;
+      // The network we draw IS the waterway layer; the basemap's is a guide only.
+      p["line-color"] = c.waterway;
     } else if (id === "park" || id.startsWith("landcover")) {
-      p["fill-color"] = LAND_GREEN;
-      p["fill-opacity"] = 0.6;
+      p["fill-color"] = c.park;
+      p["fill-opacity"] = 0.7;
     } else if (id.startsWith("landuse")) {
-      p["fill-color"] = PAPER_DEEP;
+      p["fill-color"] = c.landuse;
       p["fill-opacity"] = 0.6;
     } else if (id === "building") {
-      p["fill-color"] = BUILDING;
+      p["fill-color"] = c.building;
       delete p["fill-outline-color"];
     } else if (l.type === "line" && (id.includes("casing") || id.startsWith("boundary"))) {
-      p["line-color"] = ROAD_CASING;
+      p["line-color"] = c.roadCasing;
     } else if (l.type === "line" && (id.startsWith("highway") || id.startsWith("tunnel") || id.startsWith("road") || id.startsWith("aeroway"))) {
-      p["line-color"] = ROAD;
+      p["line-color"] = c.road;
     } else if (l.type === "line" && id.startsWith("railway")) {
-      p["line-color"] = HAIRLINE;
+      p["line-color"] = c.rail;
     } else if (l.type === "fill") {
-      p["fill-color"] = PAPER_DEEP;
+      p["fill-color"] = c.land;
     }
     if (l.type === "symbol") {
-      p["text-color"] = INK_MUTED;
-      p["text-halo-color"] = PAPER;
+      p["text-color"] = c.label;
+      p["text-halo-color"] = c.bg;
       p["text-halo-width"] = 1.2;
-      p["text-opacity"] = 0.7;
-      if (id.startsWith("water_name") || id.startsWith("waterway")) p["text-color"] = "#6F7C7C";
+      p["text-opacity"] = 0.8;
+      if (id.startsWith("water_name") || id.startsWith("waterway")) p["text-color"] = c.waterLabel;
     }
     layers.push(l);
   }
-  return { ...style, layers: layers as StyleSpecification["layers"] };
+  const hillshade = {
+    id: "hillshade",
+    type: "hillshade",
+    source: "dem",
+    maxzoom: 16,
+    paint: {
+      "hillshade-exaggeration": 0.25,
+      "hillshade-shadow-color": c.shadow,
+      "hillshade-highlight-color": c.highlight,
+      "hillshade-accent-color": c.shadow,
+      "hillshade-illumination-anchor": "map",
+    },
+  } as unknown as AnyLayer;
+  layers.splice(hillshadeAt < 0 ? 1 : hillshadeAt, 0, hillshade);
+  return {
+    ...style,
+    sources: {
+      ...style.sources,
+      dem: {
+        type: "raster-dem",
+        tiles: [DEM_TILES],
+        encoding: "terrarium",
+        tileSize: 256,
+        maxzoom: 14,
+        attribution: "Terrain: Mapzen / AWS Open Data",
+      },
+    },
+    layers: layers as StyleSpecification["layers"],
+  };
 }
 
 /** 45 degree hatch as a line-pattern image, transparent between the strokes: drawn over a
- * --unknown base line it gives the INSUFFICIENT_EVIDENCE state (the unsurveyed-area hatch). */
-export function hatchImage(color = "#5F5E59", size = 6): { width: number; height: number; data: Uint8Array } {
+ * grey base line it gives the INSUFFICIENT_EVIDENCE state (the unsurveyed-area hatch). */
+export function hatchImage(color: string, size = 6): { width: number; height: number; data: Uint8Array } {
   const data = new Uint8Array(size * size * 4);
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
   for (let y = 0; y < size; y++)

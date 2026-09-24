@@ -9,8 +9,9 @@ import { api } from "../api/client";
 import type { CatchmentFeature, ExposureLayer, ReachCollection, ReachFeature } from "../api/types";
 import { Loading } from "../components/bits";
 import { cached } from "../lib/useApi";
-import { ALERT, INK, INK_MUTED, KINGFISHER, PAPER, UNKNOWN, WATCH, rampExpression } from "../lib/ramp";
-import { chartPaperStyle, hatchImage } from "./basemap";
+import { PALETTE, rampExpression, widthExpression, type Palette } from "../lib/ramp";
+import { useTheme } from "../lib/theme";
+import { basemapStyle, hatchImage } from "./basemap";
 
 export interface ReachValue {
   value: number | null;
@@ -123,22 +124,32 @@ function inside(pt: [number, number], poly: [number, number][]): boolean {
 export function ReachMap(props: ReachMapProps) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
+  const cameraRef = useRef<{ center: maplibregl.LngLat; zoom: number } | null>(null);
+  const markers = useRef<maplibregl.Marker[]>([]);
+  const fittedCity = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
   const propsRef = useRef(props);
   propsRef.current = props;
   const [lassoPath, setLassoPath] = useState<[number, number][] | null>(null);
+  const theme = useTheme();
+  const pal = PALETTE[theme];
+  const palRef = useRef<Palette>(pal);
+  palRef.current = pal;
 
-  // ---- create the map once --------------------------------------------------------
+  // ---- create the map (again on a theme change: MapLibre cannot restyle in place) --
   useEffect(() => {
     let disposed = false;
     let map: MLMap | null = null;
-    chartPaperStyle().then((style) => {
+    const prev = cameraRef.current;
+    basemapStyle(theme).then((style) => {
       if (disposed || !el.current) return;
       const b = bounds(propsRef.current.reaches);
       const mm: MLMap = new maplibregl.Map({
         container: el.current,
         style,
-        bounds: propsRef.current.fit === false ? undefined : (b ?? undefined),
+        bounds: prev || propsRef.current.fit === false ? undefined : (b ?? undefined),
+        center: prev?.center,
+        zoom: prev?.zoom,
         fitBoundsOptions: { padding: 40 },
         attributionControl: { compact: true },
         dragRotate: false,
@@ -153,21 +164,35 @@ export function ReachMap(props: ReachMapProps) {
       }
       mapRef.current = mm;
       mm.on("error", (e) => console.warn("map:", e.error?.message ?? e));
-      mm.on("load", () => {
-        mm.addImage("hatch", hatchImage(UNKNOWN));
+      // Draw the network as soon as the style is parsed - "load" would also wait for every
+      // basemap and terrain tile.
+      let done = false;
+      const onStyle = () => {
+        if (done || disposed) return;
+        done = true;
+        mm.addImage("hatch", hatchImage(palRef.current.hatch));
         setup(mm);
         setReady(true);
         propsRef.current.onMap?.(mm);
-      });
+      };
+      if (mm.isStyleLoaded()) onStyle();
+      else mm.once("style.load", onStyle);
     });
     return () => {
       disposed = true;
+      if (map) cameraRef.current = { center: map.getCenter(), zoom: map.getZoom() };
+      markers.current.forEach((mk) => mk.remove());
+      markers.current = [];
       map?.remove();
       mapRef.current = null;
+      setReady(false);
     };
-  }, []);
+  }, [theme]);
 
   function setup(map: MLMap) {
+    const c = palRef.current;
+    const ramp = rampExpression("value", propsRef.current.breaks, c) as never;
+    const brks = propsRef.current.breaks;
     map.addSource("catchment-hover", { type: "geojson", data: EMPTY });
     map.addSource("catchment-selected", { type: "geojson", data: EMPTY });
     map.addSource("reaches", { type: "geojson", data: reachData(propsRef.current), promoteId: "reach_id" });
@@ -175,22 +200,22 @@ export function ReachMap(props: ReachMapProps) {
     map.addSource("exposure", { type: "geojson", data: EMPTY });
     map.addSource("lasso", { type: "geojson", data: EMPTY });
 
-    map.addLayer({ id: "catchment-selected-fill", type: "fill", source: "catchment-selected", paint: { "fill-color": KINGFISHER, "fill-opacity": 0.08 } });
-    map.addLayer({ id: "catchment-selected-line", type: "line", source: "catchment-selected", paint: { "line-color": KINGFISHER, "line-width": 1 } });
-    map.addLayer({ id: "catchment-hover-fill", type: "fill", source: "catchment-hover", paint: { "fill-color": INK, "fill-opacity": 0.05 } });
-    map.addLayer({ id: "catchment-hover-line", type: "line", source: "catchment-hover", paint: { "line-color": INK_MUTED, "line-width": 1, "line-dasharray": [3, 2] } });
+    map.addLayer({ id: "catchment-selected-fill", type: "fill", source: "catchment-selected", paint: { "fill-color": c.brand, "fill-opacity": 0.08 } });
+    map.addLayer({ id: "catchment-selected-line", type: "line", source: "catchment-selected", paint: { "line-color": c.brand, "line-width": 1 } });
+    map.addLayer({ id: "catchment-hover-fill", type: "fill", source: "catchment-hover", paint: { "fill-color": c.ink, "fill-opacity": 0.05 } });
+    map.addLayer({ id: "catchment-hover-line", type: "line", source: "catchment-hover", paint: { "line-color": c.inkMuted, "line-width": 1, "line-dasharray": [3, 2] } });
 
     // Exposure: neutral ink, never data-coloured.
-    map.addLayer({ id: "exposure-fill", type: "fill", source: "exposure", filter: ["==", ["geometry-type"], "Polygon"], layout: { visibility: "none" }, paint: { "fill-color": INK, "fill-opacity": 0.12, "fill-outline-color": INK_MUTED } });
-    map.addLayer({ id: "exposure-line", type: "line", source: "exposure", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: "none" }, paint: { "line-color": INK_MUTED, "line-width": 1, "line-dasharray": [1, 1.5] } });
-    map.addLayer({ id: "exposure-point", type: "circle", source: "exposure", filter: ["==", ["geometry-type"], "Point"], layout: { visibility: "none" }, paint: { "circle-radius": 3, "circle-color": PAPER, "circle-stroke-color": INK, "circle-stroke-width": 1.2 } });
+    map.addLayer({ id: "exposure-fill", type: "fill", source: "exposure", filter: ["==", ["geometry-type"], "Polygon"], layout: { visibility: "none" }, paint: { "fill-color": c.ink, "fill-opacity": 0.12, "fill-outline-color": c.inkMuted } });
+    map.addLayer({ id: "exposure-line", type: "line", source: "exposure", filter: ["==", ["geometry-type"], "LineString"], layout: { visibility: "none" }, paint: { "line-color": c.inkMuted, "line-width": 1, "line-dasharray": [1, 1.5] } });
+    map.addLayer({ id: "exposure-point", type: "circle", source: "exposure", filter: ["==", ["geometry-type"], "Point"], layout: { visibility: "none" }, paint: { "circle-radius": 3, "circle-color": c.surface, "circle-stroke-color": c.ink, "circle-stroke-width": 1.2 } });
     map.addLayer({
       id: "exposure-label",
       type: "symbol",
       source: "exposure",
       minzoom: 14,
       layout: { visibility: "none", "text-field": ["get", "label"], "text-size": 10, "text-font": ["Noto Sans Regular"], "text-offset": [0, 0.9], "text-anchor": "top" },
-      paint: { "text-color": INK_MUTED, "text-halo-color": PAPER, "text-halo-width": 1 },
+      paint: { "text-color": c.inkMuted, "text-halo-color": c.bg, "text-halo-width": 1 },
     });
 
     // Forecast spread: a soft edge under the line, wider where P10-P90 is wider.
@@ -201,7 +226,7 @@ export function ReachMap(props: ReachMapProps) {
       filter: ["all", ["get", "has_value"], [">", ["get", "spread"], 0]],
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "line-color": rampExpression("value", propsRef.current.breaks) as never,
+        "line-color": ramp,
         "line-width": ["interpolate", ["linear"], ["get", "spread"], 0, 3, 2, 14],
         "line-blur": ["interpolate", ["linear"], ["get", "spread"], 0, 2, 2, 10],
         "line-opacity": 0.35,
@@ -214,7 +239,16 @@ export function ReachMap(props: ReachMapProps) {
       source: "reaches",
       filter: ["any", ["==", ["get", "reach_id"], ""], ["get", "highlighted"]],
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": KINGFISHER, "line-width": 6 },
+      paint: { "line-color": c.brand, "line-width": 9, "line-opacity": 0.9 },
+    });
+    // A thin ground-coloured casing so every line reads on water bodies and hillshade.
+    map.addLayer({
+      id: "reach-ground",
+      type: "line",
+      source: "reaches",
+      filter: ["get", "has_value"],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": c.surface, "line-width": ["+", widthExpression("value", brks) as never, 2.5] as never, "line-opacity": ["case", ["get", "faded"], 0.2, 0.9] },
     });
     // No value: insufficient evidence -> the unsurveyed hatch, not an opacity fade.
     map.addLayer({
@@ -223,7 +257,7 @@ export function ReachMap(props: ReachMapProps) {
       source: "reaches",
       filter: ["!", ["get", "has_value"]],
       layout: { "line-cap": "butt", "line-join": "round" },
-      paint: { "line-color": UNKNOWN, "line-width": 4, "line-opacity": ["case", ["get", "faded"], 0.2, 0.55] },
+      paint: { "line-color": c.unknown, "line-width": 3, "line-opacity": ["case", ["get", "faded"], 0.2, 0.55] },
     });
     map.addLayer({
       id: "reach-unknown",
@@ -231,7 +265,7 @@ export function ReachMap(props: ReachMapProps) {
       source: "reaches",
       filter: ["!", ["get", "has_value"]],
       layout: { "line-cap": "butt", "line-join": "round" },
-      paint: { "line-pattern": "hatch", "line-width": 4, "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
+      paint: { "line-pattern": "hatch", "line-width": 3, "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
     });
     map.addLayer({
       id: "reach-observable",
@@ -239,7 +273,7 @@ export function ReachMap(props: ReachMapProps) {
       source: "reaches",
       filter: ["all", ["get", "has_value"], ["get", "observable"]],
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": rampExpression("value", propsRef.current.breaks) as never, "line-width": 3, "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
+      paint: { "line-color": ramp, "line-width": widthExpression("value", brks) as never, "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
     });
     map.addLayer({
       id: "reach-driver",
@@ -247,7 +281,7 @@ export function ReachMap(props: ReachMapProps) {
       source: "reaches",
       filter: ["all", ["get", "has_value"], ["!", ["get", "observable"]]],
       layout: { "line-cap": "butt", "line-join": "round" },
-      paint: { "line-color": rampExpression("value", propsRef.current.breaks) as never, "line-width": 2, "line-dasharray": [3, 2], "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
+      paint: { "line-color": ramp, "line-width": widthExpression("value", brks, 0.75) as never, "line-dasharray": [3, 2], "line-opacity": ["case", ["get", "faded"], 0.2, 1] },
     });
     // Soundings: the current reading set along the feature, as on a survey chart.
     map.addLayer({
@@ -257,7 +291,7 @@ export function ReachMap(props: ReachMapProps) {
       minzoom: 13.5,
       filter: ["all", ["get", "has_value"], ["!", ["get", "faded"]]],
       layout: { "symbol-placement": "line", "text-field": ["get", "sounding"], "text-size": 10, "text-font": ["Noto Sans Regular"], "symbol-spacing": 220, "text-offset": [0, -0.9] },
-      paint: { "text-color": INK, "text-halo-color": PAPER, "text-halo-width": 1.2 },
+      paint: { "text-color": c.ink, "text-halo-color": c.bg, "text-halo-width": 1.2 },
     });
     // Wide transparent hit area so a 2 px line is clickable.
     map.addLayer({ id: "reach-hit", type: "line", source: "reaches", paint: { "line-color": "#000", "line-opacity": 0, "line-width": 14 } });
@@ -267,14 +301,14 @@ export function ReachMap(props: ReachMapProps) {
       type: "circle",
       source: "pins",
       paint: {
-        "circle-radius": 5,
-        "circle-color": ["match", ["get", "severity"], "ALERT", ALERT, WATCH],
-        "circle-stroke-color": PAPER,
-        "circle-stroke-width": 1.5,
+        "circle-radius": ["match", ["get", "severity"], "ALERT", 6, 5],
+        "circle-color": ["match", ["get", "severity"], "ALERT", c.alert, c.watch],
+        "circle-stroke-color": c.surface,
+        "circle-stroke-width": 2,
       },
     });
-    map.addLayer({ id: "lasso-fill", type: "fill", source: "lasso", paint: { "fill-color": KINGFISHER, "fill-opacity": 0.06 } });
-    map.addLayer({ id: "lasso-line", type: "line", source: "lasso", paint: { "line-color": KINGFISHER, "line-width": 1, "line-dasharray": [2, 1] } });
+    map.addLayer({ id: "lasso-fill", type: "fill", source: "lasso", paint: { "fill-color": c.brand, "fill-opacity": 0.06 } });
+    map.addLayer({ id: "lasso-line", type: "line", source: "lasso", paint: { "line-color": c.brand, "line-width": 1, "line-dasharray": [2, 1] } });
 
     map.on("mousemove", "reach-hit", (e: MapLayerMouseEvent) => {
       const id = e.features?.[0]?.properties?.reach_id as string | undefined;
@@ -324,8 +358,11 @@ export function ReachMap(props: ReachMapProps) {
   useEffect(() => {
     if (!m) return;
     for (const id of ["reach-observable", "reach-driver", "reach-spread"])
-      m.setPaintProperty(id, "line-color", rampExpression("value", props.breaks) as never);
-  }, [m, props.breaks]);
+      m.setPaintProperty(id, "line-color", rampExpression("value", props.breaks, pal) as never);
+    m.setPaintProperty("reach-observable", "line-width", widthExpression("value", props.breaks) as never);
+    m.setPaintProperty("reach-driver", "line-width", widthExpression("value", props.breaks, 0.75) as never);
+    m.setPaintProperty("reach-ground", "line-width", ["+", widthExpression("value", props.breaks), 2.5] as never);
+  }, [m, props.breaks, pal]);
 
   useEffect(() => {
     if (!m) return;
@@ -337,9 +374,29 @@ export function ReachMap(props: ReachMapProps) {
     m.setLayoutProperty("pins", "visibility", props.showPins === false ? "none" : "visible");
   }, [m, props.showPins]);
 
+  // Alert pins get a halo (DOM marker, so CSS can pulse it). Decorative: clicks fall
+  // through to the pin layer underneath.
+  useEffect(() => {
+    if (!m) return;
+    markers.current.forEach((mk) => mk.remove());
+    markers.current = [];
+    if (props.showPins === false) return;
+    for (const f of pinData(props.reaches).features) {
+      if (f.properties?.severity !== "ALERT") continue;
+      const node = document.createElement("div");
+      node.className = "kf-pulse";
+      node.setAttribute("aria-hidden", "true");
+      markers.current.push(new maplibregl.Marker({ element: node }).setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number]).addTo(m));
+    }
+  }, [m, props.reaches, props.showPins]);
+
   // New city: refit.
   useEffect(() => {
     if (!m || props.fit === false) return;
+    // A theme rebuild keeps the camera; only a different city refits.
+    if (fittedCity.current === null && cameraRef.current) fittedCity.current = props.reaches.city;
+    if (fittedCity.current === props.reaches.city) return;
+    fittedCity.current = props.reaches.city;
     const b = bounds(props.reaches);
     if (b) m.fitBounds(b, { padding: 40, duration: 0 });
   }, [m, props.reaches.city]);

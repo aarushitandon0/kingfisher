@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { City, ReachCollection } from "../api/types";
-import { Chevron, ErrorNote, Rule, Segmented, Stat, Swatch } from "../components/bits";
+import { Chevron, ErrorNote, Rule, Segmented, SeverityLabel, Stat, Swatch } from "../components/bits";
 import { HydrographRail } from "../components/HydrographRail";
 import { ReachPanel } from "../components/ReachPanel";
 import { addDays, fmtDay, fmtProb, fmtRange, plural } from "../lib/format";
@@ -104,7 +104,7 @@ export function MapView({ city, reaches, timeline }: { city: City | undefined; r
         <HydrographRail ix={ix} loading={timeline.loading} error={timeline.error?.detail ?? null} />
       </div>
       <aside
-        className="order-3 border-t border-hairline px-4 pt-5 pb-8 md:order-none md:col-start-2 md:row-start-1 md:min-h-0 md:overflow-y-auto md:border-t-0 md:border-l md:pt-4"
+        className="order-3 border-t border-hairline bg-surface px-5 pt-5 pb-8 md:order-none md:col-start-2 md:row-start-1 md:min-h-0 md:overflow-y-auto md:border-t-0 md:border-l md:pt-5"
         aria-label="Detail"
       >
         {selected ? <ReachPanel key={selected} id={selected} /> : fc && <CitySummary city={city} fc={fc} />}
@@ -125,7 +125,7 @@ function LayersPanel({
   setObservability: (f: ObservabilityFilter) => void;
 }) {
   return (
-    <div className="map-panel absolute top-3 left-3 z-10 flex max-w-[calc(100%-4.5rem)] flex-col gap-2 p-2">
+    <div className="map-panel absolute top-3 left-3 z-10 flex max-w-[calc(100%-4.5rem)] flex-col gap-2 p-2.5">
       <Segmented
         dense
         label="Show reaches"
@@ -169,15 +169,15 @@ function Legend({ mode, breaks, fc }: { mode: "now" | "past" | "future"; breaks:
           : "Peak P(exceed) — no production forecast yet";
   return (
     <div className="map-panel t-dense absolute bottom-8 left-3 z-10 max-w-[260px]">
-      <button type="button" aria-expanded={open} aria-controls="map-legend" onClick={() => setOpen(!open)} className="flex w-full items-start gap-1.5 px-2 py-1.5 text-left text-ink hover:bg-paper-alt">
+      <button type="button" aria-expanded={open} aria-controls="map-legend" onClick={() => setOpen(!open)} className="flex w-full items-start gap-1.5 rounded-t-lg px-3 py-2 text-left font-medium text-ink hover:bg-paper-alt">
         <Chevron className="mt-0.5" />
         <span>{title}</span>
       </button>
       {open && (
-        <div id="map-legend" className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-0.5 px-2 pb-2">
+        <div id="map-legend" className="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1 px-3 pb-3">
           {legendStops(breaks, (v) => v.toFixed(1)).map((s) => (
             <div key={s.label} className="contents">
-              <Swatch color={s.color} />
+              <Swatch color={s.color} width={s.width} />
               <span className="t-value-sm">{s.label}</span>
             </div>
           ))}
@@ -185,7 +185,7 @@ function Legend({ mode, breaks, fc }: { mode: "now" | "past" | "future"; breaks:
           <span>{mode === "past" ? "no clear-sky reading in the 10 days before" : "insufficient evidence — no threshold"}</span>
           <Swatch color={INK_MUTED} dashed />
           <span>driver-predicted (dashed)</span>
-          <span className="inline-block h-2.5 w-2.5 justify-self-center rounded-full border border-paper bg-alert" aria-hidden />
+          <span className="inline-block h-2.5 w-2.5 justify-self-center rounded-full bg-[var(--severity-critical)] shadow-[0_0_0_3px_color-mix(in_srgb,var(--severity-critical)_22%,transparent)]" aria-hidden />
           <span>alert, at the downstream end</span>
         </div>
       )}
@@ -206,15 +206,20 @@ function CitySummary({ city, fc }: { city: City | undefined; fc: ReachCollection
   return (
     <div>
       <h2 className="t-display">{city?.name ?? fc.city}</h2>
-      <p className="t-ui mt-1 text-muted">
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <Stat label="Reaches" value={fc.features.length} tone="brand" />
+        <Stat label="Optically observable" value={city?.optically_observable ?? "—"} note="at 10 m" tone="brand" />
+        <Stat label="Driver-predicted" value={city?.driver_only ?? "—"} note="weather and catchment" />
+      </div>
+      <p className="sr-only">
         {plural(fc.features.length, "reach", "reaches")}. {city?.optically_observable ?? "—"} optically observable at 10 m, {city?.driver_only ?? "—"} driver-predicted.
       </p>
 
       {fc.alert_run === "NO_ALERT_RUN" ? (
-        <p className="t-ui mt-4 text-muted">No alert run on record. This is not "no alerts": nothing has been assessed.</p>
+        <p className="t-ui mt-3 rounded-md bg-paper-alt px-3 py-2 text-muted">No alert run on record. This is not "no alerts": nothing has been assessed.</p>
       ) : (
         <>
-          <div className="mt-4 grid grid-cols-3 gap-2">
+          <div className="mt-2 grid grid-cols-3 gap-2">
             <Stat label="Alerts" value={alerts} severity="ALERT" />
             <Stat label="Watches" value={watches} severity="WATCH" />
             <Stat label="No probability" value={noThreshold} severity="INSUFFICIENT_EVIDENCE" />
@@ -250,14 +255,14 @@ function CitySummary({ city, fc }: { city: City | undefined; fc: ReachCollection
                 onFocus={() => hoverTo(f.id)}
                 onBlur={() => hoverTo(null)}
                 onMouseEnter={() => hoverTo(f.id)}
-                className={`grid min-h-8 w-full grid-cols-[4.5rem_1fr_auto] items-center gap-2 border-b border-hairline px-1 py-1 text-left hover:bg-paper-alt ${isHover ? "bg-paper-alt" : ""}`}
+                className={`row-hover grid min-h-9 w-full grid-cols-[4.5rem_1fr_auto] items-center gap-2 border-b border-hairline px-1.5 py-1 text-left ${isHover ? "bg-paper-alt" : ""}`}
               >
-                <span className="text-ink">{f.id}</span>
+                <span className="t-value-sm text-ink">{f.id}</span>
                 <span className="truncate text-muted">{f.properties.name ?? "unnamed channel"}</span>
                 <span className="flex items-center gap-2">
-                  {f.properties.alert_severity === "ALERT" && <span className="text-alert">Alert</span>}
-                  {f.properties.alert_severity === "WATCH" && <span className="text-watch-text">Watch</span>}
-                  <span aria-hidden className="inline-block h-[3px] w-4" style={{ background: rampColor(p, PROB_BREAKS) }} />
+                  {f.properties.alert_severity === "ALERT" && <SeverityLabel s="ALERT" small />}
+                  {f.properties.alert_severity === "WATCH" && <SeverityLabel s="WATCH" small />}
+                  <span aria-hidden className="inline-block h-1 w-4 rounded-full" style={{ background: rampColor(p, PROB_BREAKS) }} />
                   <span className="t-value-sm w-9 text-right">{fmtProb(p)}</span>
                 </span>
               </button>

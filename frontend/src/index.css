@@ -1,50 +1,35 @@
 @import "tailwindcss";
+@import "./theme.css";
 
-/* Kingfisher design tokens - design.md. Chart paper, hairlines, the sediment ramp. */
-:root {
-  --water-clear: #a8c4cc;
-  --water-slight: #c4c2ae;
-  --water-turbid: #c79a5b;
-  --water-heavy: #9a6636;
-  --water-severe: #6b4423;
-
-  --chart-paper: #f2f0ea;
-  --chart-paper-alt: #e8e5dc;
-  --ink: #1c1f1e;
-  --ink-muted: #5a605d;
-  --hairline: #c8c5bb;
-
-  --alert: #b03a2e;
-  --watch: #c79a5b;
-  /* Ochre fails 4.5:1 on paper (~2.2:1). WATCH text uses this darker umber instead;
-     the ochre itself is only ever a stroke or a fill. */
-  --watch-text: #7a4f24;
-  --unknown: #9b9a94;
-  --kingfisher: #1b6b8c;
-  --scenario: #4a7c59;
-
-  color-scheme: light;
-}
-
+/* Tailwind colour names map onto the theme tokens (theme.css). The old names (paper, ink,
+   muted, hairline, kf) are kept so components did not have to be rewritten. */
 @theme {
-  --color-paper: var(--chart-paper);
-  --color-paper-alt: var(--chart-paper-alt);
-  --color-ink: var(--ink);
-  --color-muted: var(--ink-muted);
-  --color-hairline: var(--hairline);
-  --color-alert: var(--alert);
-  --color-watch: var(--watch);
-  --color-watch-text: var(--watch-text);
-  --color-unknown: var(--unknown);
-  --color-kf: var(--kingfisher);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--surface-sunken);
+  --color-paper: var(--surface);
+  --color-paper-alt: var(--surface-sunken);
+  --color-ink: var(--text-primary);
+  --color-muted: var(--text-secondary);
+  --color-faint: var(--text-tertiary);
+  --color-hairline: var(--border);
+  --color-kf: var(--brand-500);
+  --color-brand: var(--brand-500);
+  --color-brand-700: var(--brand-700);
+  --color-brand-50: var(--brand-50);
+  --color-alert: var(--severity-critical-text);
+  --color-watch: var(--severity-watch);
+  --color-watch-text: var(--severity-watch-text);
+  --color-unknown: var(--severity-insufficient);
   --color-scenario: var(--scenario);
-  --color-clear: var(--water-clear);
-  --color-slight: var(--water-slight);
-  --color-turbid: var(--water-turbid);
-  --color-heavy: var(--water-heavy);
-  --color-severe: var(--water-severe);
+  --color-clear: var(--exceed-0);
+  --color-slight: var(--exceed-1);
+  --color-turbid: var(--exceed-2);
+  --color-heavy: var(--exceed-3);
+  --color-severe: var(--exceed-4);
 
-  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Inter Tight", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
   --spacing: 4px;
@@ -56,29 +41,40 @@ body,
   height: 100%;
 }
 
+/* Adjacent table cells never touch: numbers in neighbouring columns stay apart. In the
+   base layer so a cell's own padding utility still wins. */
+@layer base {
+  table :is(td, th) + :is(td, th) {
+    padding-left: 12px;
+  }
+}
+
 body {
   margin: 0;
-  background: var(--chart-paper);
-  color: var(--ink);
+  background: var(--bg);
+  color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 20px;
-  font-weight: 450;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
 }
 
-/* Type scale (design.md). Numbers are tabular everywhere. */
+/* ---- Type scale -------------------------------------------------------------------- */
 .t-display {
-  font-size: 32px;
-  line-height: 36px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+  font-size: 34px;
+  line-height: 40px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
 }
 .t-title {
+  font-family: var(--font-display);
   font-size: 20px;
   line-height: 28px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 .t-body {
   font-size: 15px;
@@ -88,21 +84,29 @@ body {
 .t-ui {
   font-size: 13px;
   line-height: 20px;
-  font-weight: 450;
+  font-weight: 400;
 }
 .t-dense {
   font-size: 12px;
   line-height: 16px;
-  font-weight: 450;
-  letter-spacing: 0.01em;
+  font-weight: 400;
+}
+/* Eyebrow: section labels inside panels. */
+.t-eyebrow {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }
 /* Mono is for measured or computed values only - never labels. */
 .t-reading {
   font-family: var(--font-mono);
   font-size: 28px;
   line-height: 32px;
-  font-weight: 400;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  letter-spacing: -0.02em;
 }
 .t-value {
   font-family: var(--font-mono);
@@ -123,22 +127,21 @@ table,
   font-variant-numeric: tabular-nums;
 }
 
-/* Focus: always visible, kingfisher, 2px offset. Never outline: none. */
 :focus-visible {
-  outline: 2px solid var(--kingfisher);
+  outline: 2px solid var(--brand-500);
   outline-offset: 2px;
 }
 
 /* Hatching: the cartographic "unsurveyed" state = INSUFFICIENT_EVIDENCE. */
 .hatch {
-  background-color: color-mix(in srgb, var(--unknown) 55%, var(--chart-paper));
-  background-image: repeating-linear-gradient(45deg, #5f5e59 0, #5f5e59 1px, transparent 1px, transparent 4px);
+  background-color: var(--hatch-bg);
+  background-image: repeating-linear-gradient(45deg, var(--hatch-ink) 0, var(--hatch-ink) 1px, transparent 1px, transparent 4px);
 }
 /* A 3px hatched strip on the left edge. Drawn as a background, not border-image: table
    cells in the collapsed border model ignore border-image. */
 .hatch-border {
   border-left: 3px solid transparent;
-  background-image: repeating-linear-gradient(45deg, #5f5e59 0, #5f5e59 1px, color-mix(in srgb, var(--unknown) 55%, var(--chart-paper)) 1px, color-mix(in srgb, var(--unknown) 55%, var(--chart-paper)) 3px);
+  background-image: repeating-linear-gradient(45deg, var(--hatch-ink) 0, var(--hatch-ink) 1px, var(--hatch-bg) 1px, var(--hatch-bg) 3px);
   background-size: 3px 100%;
   background-repeat: no-repeat;
   background-position: left top;
@@ -146,16 +149,16 @@ table,
 }
 
 .hairline-b {
-  border-bottom: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--border);
 }
 .hairline-t {
-  border-top: 1px solid var(--hairline);
+  border-top: 1px solid var(--border);
 }
 .hairline-l {
-  border-left: 1px solid var(--hairline);
+  border-left: 1px solid var(--border);
 }
 .hairline-r {
-  border-right: 1px solid var(--hairline);
+  border-right: 1px solid var(--border);
 }
 
 button {
@@ -166,17 +169,62 @@ button:disabled {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--kingfisher) 22%, transparent);
+  background: color-mix(in srgb, var(--brand-500) 22%, transparent);
 }
 
+/* Brand checkbox: drawn, not the browser default. */
 input[type="checkbox"] {
-  accent-color: var(--kingfisher);
-  width: 14px;
-  height: 14px;
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid var(--text-tertiary);
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease;
+}
+input[type="checkbox"]::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: translateY(-1px) rotate(-45deg) scale(0);
+  transition: transform 100ms ease;
+}
+input[type="checkbox"]:checked {
+  background: var(--brand-500);
+  border-color: var(--brand-500);
+}
+input[type="checkbox"]:checked::after {
+  transform: translateY(-1px) rotate(-45deg) scale(1);
+}
+input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--brand-500);
+}
+input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-/* State feedback, not decoration: colour/border shifts on hover, press and selection so a
-   control visibly answers the pointer. No lifts, no scale, no entrance animation. */
+input[type="range"] {
+  accent-color: var(--brand-500);
+}
+
+select {
+  background-color: transparent;
+  color: var(--text-primary);
+}
+select option {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
 button,
 a,
 summary,
@@ -186,96 +234,166 @@ summary,
     color 120ms ease,
     background-color 120ms ease,
     border-color 120ms ease,
-    box-shadow 120ms ease;
+    box-shadow 120ms ease,
+    opacity 120ms ease;
 }
 
 @layer components {
-/* ---- Controls: one family for the whole app ------------------------------------------ */
-/* Square, hairline-bordered, 32px tall (28px dense). Kingfisher only marks interaction. */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--hairline);
-  background: var(--chart-paper);
-  color: var(--ink);
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 450;
-  white-space: nowrap;
-}
-.btn:hover:not(:disabled) {
-  border-color: var(--ink);
-}
-.btn:disabled {
-  color: var(--ink-muted);
-  background: var(--chart-paper-alt);
-  border-color: var(--hairline);
-}
-.btn-sm {
-  height: 28px;
-  padding: 0 8px;
-  font-size: 12px;
-  line-height: 16px;
-  letter-spacing: 0.01em;
-}
-.btn-primary {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--chart-paper);
-}
-.btn-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--ink) 86%, var(--kingfisher));
-}
-.btn-ghost {
-  border-color: transparent;
-  background: transparent;
-  color: var(--ink-muted);
-}
-.btn-ghost:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--chart-paper-alt);
-  color: var(--ink);
-}
-.btn-ghost:disabled {
-  background: transparent;
-  border-color: transparent;
-  opacity: 0.6;
-}
-.link {
-  color: var(--kingfisher);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  text-decoration-thickness: 1px;
-}
-.link:hover {
-  text-decoration-thickness: 2px;
+  /* ---- Surfaces ---------------------------------------------------------------------- */
+  /* Elevated panels carry a shadow, not a border. Borders are for same-plane dividers. */
+  .card {
+    background: var(--surface);
+    border-radius: 10px;
+    box-shadow: var(--shadow-card);
+  }
+  .card-pad {
+    padding: 16px 20px 20px;
+  }
+
+  /* ---- Controls ---------------------------------------------------------------------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 20px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) {
+    border-color: var(--text-tertiary);
+    background: var(--surface-sunken);
+  }
+  .btn:disabled {
+    opacity: 0.4;
+  }
+  .btn-sm {
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .btn-primary {
+    background: var(--brand-500);
+    border-color: var(--brand-500);
+    color: var(--on-brand);
+    font-weight: 600;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--brand-700);
+    border-color: var(--brand-700);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--brand-500) 35%, transparent);
+  }
+  .btn-primary:disabled {
+    opacity: 0.4;
+  }
+  .btn-ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-secondary);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    border-color: transparent;
+    background: var(--surface-sunken);
+    color: var(--text-primary);
+  }
+  .link {
+    color: var(--brand-500);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-thickness: 1px;
+  }
+  .link:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  /* Floating panels on the map. */
+  .map-panel {
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    border-radius: 8px;
+    box-shadow: var(--shadow-float);
+    backdrop-filter: blur(4px);
+  }
+
+  /* Severity pills: severity is the point of the product, so it gets real weight. */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .pill::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+  .pill-sm {
+    padding: 1px 8px;
+    font-size: 11px;
+  }
+  .pill-alert {
+    color: var(--severity-critical-text);
+    background: color-mix(in srgb, var(--severity-critical) 12%, transparent);
+  }
+  .pill-watch {
+    color: var(--severity-watch-text);
+    background: color-mix(in srgb, var(--severity-watch) 16%, transparent);
+  }
+  .pill-insufficient {
+    color: var(--severity-insufficient-text);
+    background: color-mix(in srgb, var(--severity-insufficient) 16%, transparent);
+  }
+  .pill-ok {
+    color: var(--severity-ok);
+    background: color-mix(in srgb, var(--severity-ok) 12%, transparent);
+  }
+  .pill-brand {
+    color: var(--brand-500);
+    background: color-mix(in srgb, var(--brand-500) 12%, transparent);
+  }
+
+  /* Inactive nav tabs: a tint on hover. */
+  button:hover > .hover-tint {
+    background: var(--surface-sunken);
+  }
+
+  /* Table rows answer the pointer. */
+  .row-hover {
+    transition: background-color 100ms ease;
+  }
+  .row-hover:hover {
+    background: var(--surface-sunken);
+  }
 }
 
-/* Floating panels on the map: paper, one hairline, no shadow. */
-.map-panel {
-  border: 1px solid var(--hairline);
-  background: color-mix(in srgb, var(--chart-paper) 94%, transparent);
-  backdrop-filter: blur(2px);
-}
-}
-
-/* Something is in flight. A 2px kingfisher sweep; static under reduced motion. */
+/* Something is in flight. A 2px brand sweep; static under reduced motion. */
 .progress {
   position: relative;
   height: 2px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--kingfisher) 15%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--brand-500) 15%, transparent);
 }
 .progress::after {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
   width: 30%;
-  background: var(--kingfisher);
+  background: var(--brand-500);
   animation: progress-sweep 1.1s ease-in-out infinite;
 }
 @keyframes progress-sweep {
@@ -284,6 +402,38 @@ summary,
   }
   to {
     transform: translateX(340%);
+  }
+}
+
+/* Route change: one short fade + 4px rise. No transform is left behind. */
+.enter {
+  animation: enter 150ms ease-out backwards;
+}
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* The alert pin's halo: pulses twice, then settles to a static ring. */
+.kf-pulse {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--severity-critical) 22%, transparent);
+  animation: kf-pulse 1.6s ease-out 2;
+}
+@keyframes kf-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--severity-critical) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 16px color-mix(in srgb, var(--severity-critical) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--severity-critical) 22%, transparent);
   }
 }
 
@@ -302,14 +452,26 @@ summary::-webkit-details-marker {
   display: none;
 }
 
+/* The one orchestrated moment: scenario bars descend from baseline to scenario. */
+.bar-descend {
+  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   button,
   a,
   summary,
   .btn,
   .ctl,
-  .chev {
+  .chev,
+  .row-hover,
+  .bar-descend,
+  input[type="checkbox"] {
     transition: none;
+  }
+  .enter,
+  .kf-pulse {
+    animation: none;
   }
   .progress::after {
     animation: none;
@@ -318,53 +480,47 @@ summary::-webkit-details-marker {
   }
 }
 
-/* MapLibre chrome, quietened to match the paper. */
+/* MapLibre chrome, matched to the panels. */
 .maplibregl-ctrl-group {
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  border: 1px solid var(--hairline);
-  background: var(--chart-paper) !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-float) !important;
+  background: var(--surface) !important;
+  overflow: hidden;
 }
 .maplibregl-ctrl-group button + button {
-  border-top: 1px solid var(--hairline) !important;
+  border-top: 1px solid var(--border) !important;
+}
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: var(--map-icon-filter);
 }
 .maplibregl-ctrl-attrib {
-  background: color-mix(in srgb, var(--chart-paper) 85%, transparent) !important;
+  background: color-mix(in srgb, var(--surface) 85%, transparent) !important;
   font-size: 10px;
-  color: var(--ink-muted);
+  color: var(--text-secondary);
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--text-secondary) !important;
+}
+.maplibregl-ctrl-attrib-button {
+  filter: var(--map-icon-filter);
 }
 .maplibregl-ctrl-scale {
   background: transparent !important;
-  border-color: var(--ink-muted) !important;
-  color: var(--ink-muted) !important;
+  border-color: var(--text-secondary) !important;
+  color: var(--text-secondary) !important;
   font-family: var(--font-mono);
   font-size: 10px;
 }
 .maplibregl-popup-content {
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  border: 1px solid var(--hairline);
-  background: var(--chart-paper) !important;
-  padding: 6px 8px !important;
+  border-radius: 8px !important;
+  box-shadow: var(--shadow-float) !important;
+  background: var(--surface) !important;
+  padding: 6px 10px !important;
   font-family: var(--font-sans);
   font-size: 12px;
   line-height: 16px;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 .maplibregl-popup-tip {
   display: none;
-}
-
-/* The one orchestrated moment: scenario bars descend from baseline to scenario. */
-.bar-descend {
-  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-@media (prefers-reduced-motion: reduce) {
-  .bar-descend {
-    transition: none;
-  }
-}
-
-input[type="range"] {
-  accent-color: var(--kingfisher);
 }

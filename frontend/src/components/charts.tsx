@@ -1,21 +1,21 @@
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from "recharts";
 import type { DriverContribution, ForecastSeries, Observation, Variable } from "../api/types";
 import { addDays, featureLabel, fmtDay, fmtSig, fmtSigned, parseDate } from "../lib/format";
-import { HAIRLINE, INK, INK_MUTED, PAPER, RAMP } from "../lib/ramp";
+import { BRAND, HAIRLINE, INK, INK_MUTED, PAPER } from "../lib/ramp";
 
 // Chart conventions (design.md + dataviz): plain charts on paper, recessive hairline axes,
 // 2px lines, no gridline decoration, one y-axis, tooltip on hover.
 const AXIS = { stroke: HAIRLINE, tick: { fill: INK_MUTED, fontSize: 11, fontFamily: "IBM Plex Mono" }, tickLine: false };
 
-/** Signed attribution colours: umber raises the forecast, clear-water lowers it. Validated
- * for CVD/normal separation; the blue is < 3:1 on paper, so every bar carries its signed
- * value as text and sits on its own side of zero. */
-export const RAISE = "#9A6636";
-export const LOWER = "#6F97A3";
+/** Signed attribution colours: severity orange raises the forecast, brand blue lowers it.
+ * Orange/blue survives the common colour-vision deficiencies; every bar also carries its
+ * signed value as text and sits on its own side of zero. */
+export const RAISE = "var(--exceed-3)";
+export const LOWER = "var(--brand-500)";
 
 function TooltipBox({ lines }: { lines: [string, string][] }) {
   return (
-    <div className="border border-hairline bg-paper px-2 py-1 t-dense">
+    <div className="t-dense rounded-md bg-surface px-2.5 py-1.5 shadow-[var(--shadow-float)]">
       {lines.map(([k, v]) => (
         <div key={k} className="flex justify-between gap-4">
           <span className="text-muted">{k}</span>
@@ -90,8 +90,8 @@ export function FanChart({
           />
           <YAxis width={44} tickFormatter={(v: number) => fmtSig(v, 2)} {...AXIS} axisLine={false} />
           <ReferenceLine x={nowT} stroke={INK} strokeWidth={1} label={{ value: "now", position: "insideTopRight", fill: INK_MUTED, fontSize: 10 }} />
-          <Area dataKey="band" stroke="none" fill={RAMP.turbid} fillOpacity={0.28} isAnimationActive={false} connectNulls={false} />
-          <Line dataKey="p50" stroke={RAMP.heavy} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
+          <Area dataKey="band" stroke="none" fill={BRAND} fillOpacity={0.18} isAnimationActive={false} connectNulls={false} />
+          <Line dataKey="p50" stroke={BRAND} strokeWidth={2} dot={false} isAnimationActive={false} connectNulls={false} />
           <Line dataKey="thr" stroke={INK_MUTED} strokeWidth={1} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
           <Scatter dataKey="obs" fill={INK} stroke={PAPER} strokeWidth={1} shape="circle" isAnimationActive={false} />
           <Tooltip
@@ -134,7 +134,7 @@ export function AttributionBars({ items, units }: { items: DriverContribution[];
             <span role="cell" className="relative h-2.5" aria-hidden>
               <span className="absolute inset-y-0 left-1/2 w-px bg-hairline" />
               <span
-                className="absolute inset-y-0"
+                className="absolute inset-y-0 rounded-[2px]"
                 style={{
                   background: pos ? RAISE : LOWER,
                   left: pos ? "50%" : `${50 - w}%`,

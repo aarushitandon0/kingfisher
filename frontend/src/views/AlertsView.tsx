@@ -50,17 +50,17 @@ export function AlertsView({ city }: { city: string }) {
 
         {r && r.alert_run === "OK" && (
           <>
-            <div className="mt-6 overflow-x-auto md:overflow-visible">
+            <div className="card mt-6 overflow-x-auto md:overflow-visible">
               <table className="w-full min-w-[900px] t-dense">
-                <thead className="sticky top-0 z-10 bg-paper">
-                  <tr className="text-left text-muted shadow-[inset_0_-1px_0_var(--hairline)]">
-                    <th scope="col" className="py-2 pr-4 pl-3 font-normal">Reach</th>
-                    <th scope="col" className="py-2 pr-4 font-normal">Severity</th>
-                    <th scope="col" className="py-2 pr-4 font-normal">Variable</th>
-                    <th scope="col" className="py-2 pr-4 text-right font-normal">Probability</th>
-                    <th scope="col" className="py-2 pr-4 font-normal">Window</th>
-                    <th scope="col" className="py-2 font-normal">Exposure or reason</th>
-                    <th scope="col" className="py-2 font-normal">
+                <thead className="sticky top-0 z-10 bg-surface">
+                  <tr className="t-eyebrow text-left shadow-[inset_0_-1px_0_var(--border)]">
+                    <th scope="col" className="py-2.5 pr-4 pl-4 font-semibold">Reach</th>
+                    <th scope="col" className="py-2.5 pr-4 font-semibold">Severity</th>
+                    <th scope="col" className="py-2.5 pr-4 font-semibold">Variable</th>
+                    <th scope="col" className="py-2.5 pr-4 text-right font-semibold">Probability</th>
+                    <th scope="col" className="py-2.5 pr-4 font-semibold">Window</th>
+                    <th scope="col" className="py-2.5 font-semibold">Exposure or reason</th>
+                    <th scope="col" className="py-2.5 font-semibold">
                       <span className="sr-only">Expand</span>
                     </th>
                   </tr>
@@ -69,7 +69,7 @@ export function AlertsView({ city }: { city: string }) {
                   rows.length === 0 ? null : (
                     <tbody key={s}>
                       <tr>
-                        <th scope="colgroup" colSpan={7} className="hairline-b bg-paper-alt py-1.5 pl-3 text-left font-normal">
+                        <th scope="colgroup" colSpan={7} className="hairline-b bg-paper-alt py-2 pl-4 text-left font-normal">
                           <SeverityLabel s={s} /> <span className="t-value-sm ml-1 text-muted">{rows.length}</span>
                         </th>
                       </tr>
@@ -79,17 +79,17 @@ export function AlertsView({ city }: { city: string }) {
                         const toggle = () => setOpen(isOpen ? null : a.alert_id);
                         return (
                           <Fragment key={a.alert_id}>
-                            <tr className={`hairline-b cursor-pointer align-top hover:bg-paper-alt ${isOpen ? "bg-paper-alt" : ""}`} onClick={toggle}>
-                              <td className={`py-2 pr-4 pl-3 ${b.className}`} style={b.style}>
-                                <span className="text-ink">{a.reach_id}</span> <span className="text-muted">{a.reach_name ?? ""}</span>
+                            <tr className={`row-hover hairline-b cursor-pointer align-top ${isOpen ? "bg-paper-alt" : ""}`} onClick={toggle}>
+                              <td className={`py-2.5 pr-4 pl-4 ${b.className}`} style={b.style}>
+                                <span className="t-value-sm text-ink">{a.reach_id}</span> <span className="text-muted">{a.reach_name ?? ""}</span>
                               </td>
                               <td className="py-2 pr-4 whitespace-nowrap">
-                                <SeverityLabel s={a.severity} />
+                                <SeverityLabel s={a.severity} small />
                               </td>
-                              <td className="py-2 pr-4 whitespace-nowrap text-muted">{VARIABLE_LABEL[a.variable] ?? a.variable}</td>
-                              <td className="py-2 pr-4 text-right t-value-sm">{a.exceedance_prob !== null ? fmtProb(a.exceedance_prob) : <span className="text-muted">withheld</span>}</td>
-                              <td className="py-2 pr-4 t-value-sm whitespace-nowrap">{fmtRange(a.window_start, a.window_end)}</td>
-                              <td className="py-2 pr-2 text-muted">
+                              <td className="py-2.5 pr-4 whitespace-nowrap text-muted">{VARIABLE_LABEL[a.variable] ?? a.variable}</td>
+                              <td className="py-2.5 pr-4 text-right t-value-sm font-medium">{a.exceedance_prob !== null ? fmtProb(a.exceedance_prob) : <span className="text-muted">withheld</span>}</td>
+                              <td className="py-2.5 pr-4 t-value-sm whitespace-nowrap">{fmtRange(a.window_start, a.window_end)}</td>
+                              <td className="py-2.5 pr-2 text-muted">
                                 {a.severity === "INSUFFICIENT_EVIDENCE" ? <span className="text-ink">{reasonText(a.suppressed_reason)}</span> : exposureSummary(a.exposure)}
                               </td>
                               <td className="py-1 pr-1 text-right">
@@ -110,7 +110,7 @@ export function AlertsView({ city }: { city: string }) {
                             </tr>
                             {isOpen && (
                               <tr className="hairline-b bg-paper-alt">
-                                <td colSpan={7} className={`pr-3 pb-5 pl-3 ${b.className}`} style={b.style}>
+                                <td colSpan={7} className={`pr-4 pb-5 pl-4 ${b.className}`} style={b.style}>
                                   <AlertDetailBlock id={a.alert_id} />
                                 </td>
                               </tr>
@@ -162,7 +162,7 @@ function RunSummary({ r, shown, toggle }: { r: AlertsResponse; shown: Record<Sev
           />
           {supp.length > 0 && (
             <Stat
-              label={<span className="text-muted">Stopped by guardrails</span>}
+              label={<span className="font-medium text-muted">Stopped by guardrails</span>}
               value={
                 <span className="flex flex-wrap gap-x-4">
                   {supp.map(([g, n]) => (
@@ -195,7 +195,7 @@ function AlertDetailBlock({ id }: { id: string }) {
   return (
     <div className="grid gap-6 pt-3 md:grid-cols-[1.2fr_1fr_1fr]">
       <section>
-        <h3 className="t-ui mb-1 text-ink">Attribution</h3>
+        <h3 className="t-eyebrow mb-2">Attribution</h3>
         {a.severity === "INSUFFICIENT_EVIDENCE" ? (
           <p className="t-ui text-muted">
             Not attributed: nothing was forecast to exceed. {reasonText(a.suppressed_reason)}.
@@ -219,18 +219,20 @@ function AlertDetailBlock({ id }: { id: string }) {
         )}
       </section>
       <section>
-        <h3 className="t-ui mb-1 text-ink">Guardrails</h3>
+        <h3 className="t-eyebrow mb-2">Guardrails</h3>
         <table className="w-full t-dense">
           <tbody>
             {Object.entries(a.guardrails ?? {}).map(([g, s]) => (
               <tr key={g} className="hairline-b">
                 <td className="py-0.5">{g}</td>
-                <td className={`py-0.5 text-right ${s === "pass" ? "text-ink" : "text-muted"}`}>{humanize(s)}</td>
+                <td className="py-1 text-right">
+                  <span className={`pill pill-sm ${s === "pass" ? "pill-ok" : "pill-insufficient"}`}>{humanize(s)}</span>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <h3 className="t-ui mt-3 mb-1 text-ink">Basis</h3>
+        <h3 className="t-eyebrow mt-4 mb-2">Basis</h3>
         <table className="w-full t-dense">
           <tbody>
             {Object.entries(a.basis ?? {})
@@ -245,7 +247,7 @@ function AlertDetailBlock({ id }: { id: string }) {
         </table>
       </section>
       <section>
-        <h3 className="t-ui mb-1 text-ink">Exposure within {a.exposure?.buffer_m ?? "—"} m</h3>
+        <h3 className="t-eyebrow mb-2">Exposure within {a.exposure?.buffer_m ?? "—"} m</h3>
         <table className="w-full t-dense">
           <tbody>
             {Object.entries(feats)

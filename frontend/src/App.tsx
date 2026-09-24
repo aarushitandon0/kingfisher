@@ -24,7 +24,7 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:bg-paper focus:px-2 focus:py-1">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:bg-surface focus:px-2 focus:py-1">
         Skip to content
       </a>
       <TopBar cities={cities.data} />
@@ -37,10 +37,15 @@ export function App() {
           </div>
         )}
         {cities.data && !current && <p className="t-ui p-6 text-muted">No city called "{city}" is configured.</p>}
-        {current && view === "map" && <MapView key={city} city={current} reaches={reaches} timeline={timeline} />}
-        {current && view === "alerts" && <AlertsView key={city} city={city} />}
-        {current && view === "scenarios" && (built ? <ScenarioView key={city} city={city} reaches={reaches} /> : <NotBuilt name={current.name} city={city} />)}
-        {current && view === "validation" && <ValidationView key={city} city={city} />}
+        {current && (
+          // Keyed by view: a route change replays the short entrance.
+          <div key={view} className="enter flex flex-1 flex-col md:min-h-0">
+            {view === "map" && <MapView key={city} city={current} reaches={reaches} timeline={timeline} />}
+            {view === "alerts" && <AlertsView key={city} city={city} />}
+            {view === "scenarios" && (built ? <ScenarioView key={city} city={city} reaches={reaches} /> : <NotBuilt name={current.name} city={city} />)}
+            {view === "validation" && <ValidationView key={city} city={city} />}
+          </div>
+        )}
       </main>
     </div>
   );

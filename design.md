@@ -4,6 +4,35 @@ Visual direction for the frontend. Read alongside `MASTERSPEC.md` §13.
 
 ---
 
+## Visual refresh (25 Sep 2026) — supersedes the sections below where they conflict
+
+The chart-paper look read as a rendered spec, not a monitoring product. The refresh keeps
+the concepts (hydrograph rail, hatching = insufficient evidence, mono for measured values,
+citations as text) and changes the surface:
+
+- **Tokens live in `frontend/src/theme.css`**; MapLibre's hex twins are `PALETTE` in
+  `frontend/src/lib/ramp.ts`. Change both together.
+- **Palette is the bird.** Brand = kingfisher cobalt `--brand-500 #1C6FA8` (actions, active
+  nav, links, focus, forecast marks). Severity = breast orange/red, used for severity
+  only: `--severity-critical #C6432B`, `--severity-watch #D98C2B`, insufficient
+  `#9A9CA3`. Text-safe `*-text` twins exist for each.
+- **Exceedance ramp** `--exceed-0..4`: `#CBD9E6 #8FB7D6 #E8B24A #D9772E #B8331F`, replacing
+  the sediment ramp. Map line width also scales with band (2 → 5 px).
+- **Dark mode ships**: follows the system, with a toggle in the top bar (`lib/theme.ts`,
+  `data-theme` on `<html>`). The map is rebuilt with the dark palette on a switch.
+- **Type**: Inter Tight 600 for display/titles (page titles 34px), Inter for UI, IBM Plex
+  Mono for values. Section labels are 11px uppercase eyebrows (`.t-eyebrow`).
+- **Surfaces**: panels are `.card` (surface, 10px radius, soft shadow, no border); map
+  overlays are `.map-panel` (8px, float shadow). Borders only for same-plane dividers.
+- **Severity is a pill** (`.pill-alert/-watch/-insufficient`); table rows keep the 3px
+  left edge; stat tiles get a 3px top edge and severity-coloured numbers.
+- **Motion**: 150ms fade + 4px rise on route change; 100ms row hover; the alert pin's halo
+  pulses twice then settles; the scenario bar descent. All off under reduced motion.
+- **Basemap**: Positron recoloured per theme, blue-grey water, faint hillshade from open
+  Terrarium DEM tiles.
+
+---
+
 ## The brief
 
 **Subject:** a live surveillance instrument for urban streams — it watches water

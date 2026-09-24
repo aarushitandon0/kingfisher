@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis, Bar, BarChart } from "recharts";
+import { Area, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis, Bar, BarChart } from "recharts";
 import { api } from "../api/client";
 import type { MetricsDocument, ScoredBlock, Variable, VariableMetrics } from "../api/types";
 import { Chevron, ErrorNote, Loading, PageHeader, Segmented } from "../components/bits";
 import { TooltipLines } from "../components/charts";
 import { fmtDay, fmtNum, humanize, VARIABLE_LABEL } from "../lib/format";
-import { HAIRLINE, INK, INK_MUTED, RAMP } from "../lib/ramp";
+import { ALERT, BRAND, HAIRLINE, INK, INK_MUTED, PAPER, PAPER_ALT, PROB_BREAKS, rampColor } from "../lib/ramp";
 import { useApi } from "../lib/useApi";
 
 const AXIS = { stroke: HAIRLINE, tick: { fill: INK_MUTED, fontSize: 11, fontFamily: "IBM Plex Mono" }, tickLine: false };
@@ -32,7 +32,7 @@ export function ValidationView({ city }: { city: string }) {
               <span className="t-value-sm">{doc.headline_run}</span> (weather as observed — an upper bound on live skill). Production model: {doc.production_model ?? "LightGBM"}.
             </p>
 
-            <div className="t-ui mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 border-y border-hairline py-3">
+            <div className="card t-ui mt-5 flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
               <span className="flex flex-wrap items-center gap-2">
                 <span className="text-muted">Fold</span>
                 <Segmented label="Fold" value={fold} onChange={setFold} options={Object.keys(doc.folds).map((f) => ({ value: f, label: f }))} />
@@ -52,7 +52,7 @@ export function ValidationView({ city }: { city: string }) {
               <p className="t-ui mt-4 text-muted">No {variable} metrics in the {fold} fold.</p>
             ) : (
               <>
-                <div className="mt-6 grid gap-10 lg:grid-cols-[1.5fr_1fr]">
+                <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
                   <Reliability vm={vm} />
                   <div>
                     <Observability vm={vm} />
@@ -74,18 +74,28 @@ export function ValidationView({ city }: { city: string }) {
 
 /** Section title: one style for every section on the page. `first` drops the top margin
  * for sections that open a grid row. */
-function H({ children, first = false }: { children: React.ReactNode; first?: boolean }) {
-  return <h2 className={`t-title mb-2 border-b border-hairline pb-1.5 ${first ? "" : "mt-12"}`}>{children}</h2>;
+function H({ children }: { children: React.ReactNode; first?: boolean }) {
+  return <h2 className="t-eyebrow mb-2">{children}</h2>;
 }
+
+/** Every section is a card; `first` is kept for call sites and no longer changes spacing. */
+const CARD = "card card-pad";
 
 function Reliability({ vm }: { vm: VariableMetrics }) {
   const p = vm.probability;
   const bins = p.bins.filter((b) => b.n > 0 && b.mean_forecast !== null && b.observed_frequency !== null);
   const data = bins.map((b) => ({ x: b.mean_forecast!, y: b.observed_frequency!, n: b.n, lo: b.bin_low, hi: b.bin_high }));
+  const shade = shadedGaps(data);
   return (
-    <section aria-label="Reliability diagram">
+    <section aria-label="Reliability diagram" className={CARD}>
       <H first>Reliability</H>
       <p className="t-dense text-muted">
+        <span className="mr-1 inline-block h-2.5 w-2.5 rounded-[2px] align-middle" style={{ background: "color-mix(in srgb, var(--severity-critical) 22%, transparent)" }} aria-hidden />
+        overconfident{" "}
+        <span className="mr-1 ml-2 inline-block h-2.5 w-2.5 rounded-[2px] align-middle" style={{ background: "color-mix(in srgb, var(--brand-500) 22%, transparent)" }} aria-hidden />
+        underconfident
+      </p>
+      <p className="t-dense mt-1 text-muted">
         Forecast P(exceed threshold) against how often it was exceeded, <span className="t-value-sm">{p.n.toLocaleString("en-GB")}</span> reach-days. On the diagonal is calibrated; below it, the forecast is overconfident.
       </p>
       <div className="mt-2 aspect-square max-h-[440px] w-full">
@@ -94,13 +104,17 @@ function Reliability({ vm }: { vm: VariableMetrics }) {
             <CartesianGrid stroke={HAIRLINE} strokeOpacity={0.5} />
             <XAxis dataKey="x" type="number" domain={[0, 1]} ticks={[0, 0.2, 0.4, 0.6, 0.8, 1]} {...AXIS} label={{ value: "forecast probability", position: "insideBottom", offset: -14, fill: INK_MUTED, fontSize: 11 }} />
             <YAxis type="number" domain={[0, 1]} ticks={[0, 0.2, 0.4, 0.6, 0.8, 1]} width={40} {...AXIS} label={{ value: "observed frequency", angle: -90, position: "insideLeft", fill: INK_MUTED, fontSize: 11 }} />
+            {/* Below the diagonal the forecast said more than happened (overconfident);
+                above it, less (underconfident). Shaded between the curve and the diagonal. */}
+            <Area data={shade} dataKey="over" stroke="none" fill={ALERT} fillOpacity={0.1} isAnimationActive={false} activeDot={false} tooltipType="none" />
+            <Area data={shade} dataKey="under" stroke="none" fill={BRAND} fillOpacity={0.1} isAnimationActive={false} activeDot={false} tooltipType="none" />
             <ReferenceLine segment={[{ x: 0, y: 0 }, { x: 1, y: 1 }]} stroke={INK_MUTED} strokeDasharray="4 3" />
             <ReferenceLine y={p.event_rate} stroke={HAIRLINE} label={{ value: "base rate", position: "insideTopLeft", fill: INK_MUTED, fontSize: 10 }} />
-            <Line dataKey="y" stroke={RAMP.heavy} strokeWidth={2} dot={false} isAnimationActive={false} />
-            <Scatter dataKey="y" fill={RAMP.heavy} isAnimationActive={false} />
+            <Line dataKey="y" stroke={BRAND} strokeWidth={2.5} dot={false} isAnimationActive={false} />
+            <Scatter dataKey="y" fill={BRAND} stroke={PAPER} strokeWidth={1.5} isAnimationActive={false} />
             <Tooltip
               content={({ active, payload }) => {
-                const d = active ? (payload?.[0]?.payload as (typeof data)[number] | undefined) : undefined;
+                const d = active ? (payload?.find((q) => (q.payload as { n?: number })?.n !== undefined)?.payload as (typeof data)[number] | undefined) : undefined;
                 return d
                   ? TooltipLines([
                       ["bin", `${d.lo.toFixed(1)}–${d.hi.toFixed(1)}`],
@@ -119,7 +133,11 @@ function Reliability({ vm }: { vm: VariableMetrics }) {
           <BarChart data={p.bins} margin={{ top: 0, right: 16, bottom: 0, left: 48 }}>
             <XAxis dataKey="bin_low" hide />
             <YAxis hide scale="sqrt" />
-            <Bar dataKey="n" fill={RAMP.clear} isAnimationActive={false} />
+            <Bar dataKey="n" isAnimationActive={false} radius={[2, 2, 0, 0]}>
+              {p.bins.map((b) => (
+                <Cell key={b.bin_low} fill={rampColor((b.bin_low + b.bin_high) / 2, PROB_BREAKS)} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -158,7 +176,7 @@ function Skill({ vm, doc, fold, variable }: { vm: VariableMetrics; doc: MetricsD
   const rows: [string, ScoredBlock | undefined][] = [...BUCKETS.map(([k, l]) => [l, vm.by_bucket[k]] as [string, ScoredBlock | undefined]), ["all horizons", vm.all_horizons]];
   const losses = doc.losses.filter((l) => l.fold === fold && l.variable === variable);
   return (
-    <section>
+    <section className={`${CARD} mt-6`}>
       <H>Skill against baselines</H>
       <p className="t-dense text-muted">
         Scored on the rows every forecaster has. Skill = 1 − model / baseline: positive beats the baseline, negative loses to it. Seasonal-naive is a point forecast, so its CRPS equals its MAE.
@@ -166,21 +184,21 @@ function Skill({ vm, doc, fold, variable }: { vm: VariableMetrics; doc: MetricsD
       <div className="overflow-x-auto">
         <table className="mt-2 w-full min-w-[720px] t-dense">
           <thead>
-            <tr className="hairline-b text-muted">
-              <th className="py-1 text-left font-normal">Lead time</th>
-              <th className="py-1 text-right font-normal">n</th>
-              <th className="py-1 text-right font-normal">MAE model</th>
-              <th className="py-1 text-right font-normal">seasonal-naive</th>
-              <th className="py-1 text-right font-normal">climatology</th>
-              <th className="py-1 text-right font-normal">CRPS model</th>
-              <th className="py-1 text-right font-normal">skill vs seasonal-naive</th>
-              <th className="py-1 text-right font-normal">skill vs climatology</th>
-              <th className="py-1 text-right font-normal">80% coverage</th>
+            <tr className="hairline-b t-eyebrow">
+              <th className="py-1 text-left font-semibold">Lead time</th>
+              <th className="py-1 text-right font-semibold">n</th>
+              <th className="py-1 text-right font-semibold">MAE model</th>
+              <th className="py-1 text-right font-semibold">seasonal-naive</th>
+              <th className="py-1 text-right font-semibold">climatology</th>
+              <th className="py-1 text-right font-semibold">CRPS model</th>
+              <th className="py-1 text-right font-semibold">skill vs seasonal-naive</th>
+              <th className="py-1 text-right font-semibold">skill vs climatology</th>
+              <th className="py-1 text-right font-semibold">80% coverage</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(([label, b]) => (
-              <tr key={label} className="hairline-b">
+              <tr key={label} className="row-hover hairline-b">
                 <td className="py-1">{label}</td>
                 <td className="py-1 text-right t-value-sm">{b?.n_common?.toLocaleString("en-GB") ?? "—"}</td>
                 <td className="py-1 text-right t-value-sm">{fmtNum(b?.common?.model.mae, 3)}</td>
@@ -209,20 +227,20 @@ function Skill({ vm, doc, fold, variable }: { vm: VariableMetrics; doc: MetricsD
         <div className="overflow-x-auto">
         <table className="mt-1 w-full min-w-[640px] t-dense">
           <thead>
-            <tr className="hairline-b text-muted">
-              <th className="py-0.5 text-left font-normal">run</th>
-              <th className="py-0.5 text-left font-normal">scope</th>
-              <th className="py-0.5 text-left font-normal">baseline</th>
-              <th className="py-0.5 text-left font-normal">metric</th>
-              <th className="py-0.5 text-right font-normal">model</th>
-              <th className="py-0.5 text-right font-normal">baseline</th>
-              <th className="py-0.5 text-right font-normal">skill</th>
-              <th className="py-0.5 text-right font-normal">n</th>
+            <tr className="hairline-b t-eyebrow">
+              <th className="py-0.5 text-left font-semibold">run</th>
+              <th className="py-0.5 text-left font-semibold">scope</th>
+              <th className="py-0.5 text-left font-semibold">baseline</th>
+              <th className="py-0.5 text-left font-semibold">metric</th>
+              <th className="py-0.5 text-right font-semibold">model</th>
+              <th className="py-0.5 text-right font-semibold">baseline</th>
+              <th className="py-0.5 text-right font-semibold">skill</th>
+              <th className="py-0.5 text-right font-semibold">n</th>
             </tr>
           </thead>
           <tbody>
             {losses.map((l, k) => (
-              <tr key={k} className="hairline-b">
+              <tr key={k} className="row-hover hairline-b">
                 <td className="py-0.5">{l.run}</td>
                 <td className="py-0.5">{l.scope}</td>
                 <td className="py-0.5">{l.baseline.replaceAll("_", "-")}</td>
@@ -248,15 +266,15 @@ function Observability({ vm }: { vm: VariableMetrics }) {
   const obs = o.observable;
   const drv = o.driver_only;
   return (
-    <section>
+    <section className={CARD}>
       <H first>Observable vs driver-only</H>
       <table className="w-full t-dense">
         <thead>
-          <tr className="hairline-b text-muted">
+          <tr className="hairline-b t-eyebrow">
             <th className="py-1 text-left font-normal" />
-            <th className="py-1 text-right font-normal">scored reach-days</th>
-            <th className="py-1 text-right font-normal">MAE</th>
-            <th className="py-1 text-right font-normal">CRPS skill vs climatology</th>
+            <th className="py-1 text-right font-semibold">scored reach-days</th>
+            <th className="py-1 text-right font-semibold">MAE</th>
+            <th className="py-1 text-right font-semibold">CRPS skill vs climatology</th>
           </tr>
         </thead>
         <tbody>
@@ -287,7 +305,7 @@ function LeadTime({ doc, vm }: { doc: MetricsDocument; vm: VariableMetrics }) {
   const op = vm.probability.operating_point_pre_guardrail;
   const note = doc.not_computed?.lead_time_distribution;
   return (
-    <section className="mt-10">
+    <section className={`${CARD} mt-6`}>
       <H first>Lead time</H>
       {note ? (
         <p className="t-ui">
@@ -296,7 +314,7 @@ function LeadTime({ doc, vm }: { doc: MetricsDocument; vm: VariableMetrics }) {
       ) : (
         <p className="t-ui text-muted">See metrics.json.</p>
       )}
-      <p className="t-dense mt-3 text-muted">Skill by lead day (CRPS skill vs climatology)</p>
+      <p className="t-eyebrow mt-4">Skill by lead day (CRPS skill vs climatology)</p>
       <div className="h-32 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
@@ -309,8 +327,8 @@ function LeadTime({ doc, vm }: { doc: MetricsDocument; vm: VariableMetrics }) {
             <XAxis dataKey="h" {...AXIS} />
             <YAxis width={40} {...AXIS} axisLine={false} tickFormatter={(v: number) => v.toFixed(2)} />
             <ReferenceLine y={0} stroke={INK} />
-            <Bar dataKey="s" fill={RAMP.heavy} isAnimationActive={false} />
-            <Tooltip content={({ active, payload }) => { const d = active ? (payload?.[0]?.payload as { h: number; s: number | null; n?: number } | undefined) : undefined; return d ? TooltipLines([["lead day", String(d.h)], ["skill", fmtSkill(d.s)], ["n", d.n?.toLocaleString("en-GB") ?? "—"]]) : null; }} />
+            <Bar dataKey="s" fill={BRAND} radius={[2, 2, 0, 0]} isAnimationActive={false} activeBar={{ fill: "var(--brand-700)" }} />
+            <Tooltip cursor={{ fill: PAPER_ALT }} content={({ active, payload }) => { const d = active ? (payload?.[0]?.payload as { h: number; s: number | null; n?: number } | undefined) : undefined; return d ? TooltipLines([["lead day", String(d.h)], ["skill", fmtSkill(d.s)], ["n", d.n?.toLocaleString("en-GB") ?? "—"]]) : null; }} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -327,7 +345,7 @@ function LeadTime({ doc, vm }: { doc: MetricsDocument; vm: VariableMetrics }) {
 function Anomaly({ doc }: { doc: MetricsDocument }) {
   const a = doc.anomaly;
   return (
-    <section>
+    <section className={`${CARD} mt-6`}>
       <H>Anomaly detection</H>
       {!a ? (
         <p className="t-ui text-muted">Not run for this city (make anomaly).</p>
@@ -338,18 +356,18 @@ function Anomaly({ doc }: { doc: MetricsDocument }) {
           </p>
           <table className="mt-2 w-full max-w-3xl t-dense">
             <thead>
-              <tr className="hairline-b text-muted">
-                <th className="py-1 text-left font-normal">Variable</th>
-                <th className="py-1 text-right font-normal">detections</th>
-                <th className="py-1 text-right font-normal">events</th>
-                <th className="py-1 text-right font-normal">precision</th>
-                <th className="py-1 text-right font-normal">recall</th>
-                <th className="py-1 text-right font-normal">F1</th>
+              <tr className="hairline-b t-eyebrow">
+                <th className="py-1 text-left font-semibold">Variable</th>
+                <th className="py-1 text-right font-semibold">detections</th>
+                <th className="py-1 text-right font-semibold">events</th>
+                <th className="py-1 text-right font-semibold">precision</th>
+                <th className="py-1 text-right font-semibold">recall</th>
+                <th className="py-1 text-right font-semibold">F1</th>
               </tr>
             </thead>
             <tbody>
               {Object.entries(a.by_variable).map(([v, m]) => (
-                <tr key={v} className="hairline-b">
+                <tr key={v} className="row-hover hairline-b">
                   <td className="py-1">{VARIABLE_LABEL[v] ?? v}</td>
                   <td className="py-1 text-right t-value-sm">{m.detections}</td>
                   <td className="py-1 text-right t-value-sm">{m.events}</td>
@@ -373,29 +391,31 @@ function Anomaly({ doc }: { doc: MetricsDocument }) {
 function ResponseCheck({ check }: { check: { checks?: { feature: string; variable: string; verdict: string; standardised_effect: number; observed_sign: number; expected_sign: number }[] } | null }) {
   if (!check?.checks?.length) return null;
   return (
-    <section>
+    <section className={`${CARD} mt-6`}>
       <H>Scenario response check</H>
       <p className="t-dense text-muted">Before the scenario engine may perturb a catchment attribute through the model, the model's response to it must have the sign the literature expects and a non-negligible size. Where it fails, the lever is not estimated.</p>
       <table className="mt-2 w-full max-w-3xl t-dense">
         <thead>
-          <tr className="hairline-b text-muted">
-            <th className="py-1 text-left font-normal">Attribute</th>
-            <th className="py-1 text-left font-normal">Variable</th>
-            <th className="py-1 text-right font-normal">effect (target SD per ±1 SD)</th>
-            <th className="py-1 text-right font-normal">sign, model / literature</th>
-            <th className="py-1 text-left pl-4 font-normal">Verdict</th>
+          <tr className="hairline-b t-eyebrow">
+            <th className="py-1 text-left font-semibold">Attribute</th>
+            <th className="py-1 text-left font-semibold">Variable</th>
+            <th className="py-1 text-right font-semibold">effect (target SD per ±1 SD)</th>
+            <th className="py-1 text-right font-semibold">sign, model / literature</th>
+            <th className="py-1 text-left pl-4 font-semibold">Verdict</th>
           </tr>
         </thead>
         <tbody>
           {check.checks.map((c) => (
-            <tr key={`${c.feature}-${c.variable}`} className="hairline-b">
+            <tr key={`${c.feature}-${c.variable}`} className="row-hover hairline-b">
               <td className="py-1">{c.feature.replaceAll("_", " ")}</td>
               <td className="py-1">{VARIABLE_LABEL[c.variable] ?? c.variable}</td>
               <td className="py-1 text-right t-value-sm">{fmtSkill(c.standardised_effect)}</td>
               <td className="py-1 text-right t-value-sm">
                 {c.observed_sign > 0 ? "+" : c.observed_sign < 0 ? "−" : "0"} / {c.expected_sign > 0 ? "+" : "−"}
               </td>
-              <td className="py-1 pl-4">{humanize(c.verdict)}</td>
+              <td className="py-1 pl-4">
+                <span className={`pill pill-sm ${c.verdict === "PASS" || c.verdict === "OK" ? "pill-ok" : "pill-insufficient"}`}>{humanize(c.verdict)}</span>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -408,7 +428,7 @@ function NotComputed({ doc }: { doc: MetricsDocument }) {
   const items = Object.entries(doc.not_computed ?? {});
   if (!items.length) return null;
   return (
-    <section className="mb-10">
+    <section className={`${CARD} mt-6 mb-10`}>
       <H>Not computed</H>
       <ul className="t-ui">
         {items.map(([k, v]) => (
@@ -419,4 +439,31 @@ function NotComputed({ doc }: { doc: MetricsDocument }) {
       </ul>
     </section>
   );
+}
+
+interface RelPoint {
+  x: number;
+  y: number;
+}
+
+/** Bands between the reliability curve and the diagonal, split where the curve crosses it,
+ * so each side is shaded in its own colour. Pure geometry on the plotted points. */
+function shadedGaps(pts: RelPoint[]): { x: number; over: [number, number]; under: [number, number] }[] {
+  const out: { x: number; over: [number, number]; under: [number, number] }[] = [];
+  const push = (x: number, y: number) =>
+    out.push({ x, over: y < x ? [y, x] : [x, x], under: y > x ? [x, y] : [x, x] });
+  pts.forEach((p, i) => {
+    if (i > 0) {
+      const a = pts[i - 1];
+      const da = a.y - a.x;
+      const db = p.y - p.x;
+      if (da * db < 0) {
+        const t = da / (da - db);
+        const x = a.x + t * (p.x - a.x);
+        push(x, x);
+      }
+    }
+    push(p.x, p.y);
+  });
+  return out;
 }
