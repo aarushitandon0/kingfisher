@@ -1,0 +1,20 @@
+# Runtime deps of the API only (the pipeline, EA-LSTM and data acquisition are not deployed).
+# Pinned to the versions the local venv was validated with.
+fastapi==0.141.1
+starlette==1.7.0
+uvicorn[standard]==0.53.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.3
+SQLAlchemy==2.0.54
+GeoAlchemy2==0.20.0
+psycopg[binary]==3.3.6
+numpy==2.4.6
+pandas==3.0.6
+pyarrow==25.0.1
+scikit-learn==1.9.1
+scipy==1.17.1
+lightgbm==4.7.0
+shapely==2.1.2
+PyYAML==6.0.3
+structlog==26.1.0

@@ -3,7 +3,8 @@ import { PALETTE, type Palette, type Theme } from "../lib/ramp";
 
 // OpenFreeMap Positron (no key, OSM data), restyled water-first. Most basemaps are drawn for
 // navigation; this one is drawn for hydrology:
-//  - land is one flat fill (no hillshade: relief was the loudest noise on the map)
+//  - land is one flat, warm neutral fill (no hillshade), a different hue from the chrome
+//    so the map reads as its own surface in both themes
 //  - roads recede to a muted line, and minor roads only fade in once zoomed in
 //  - labels are hidden except places and water names until zoomed in
 //  - water polygons and the basemap's own waterways read as water; our reaches draw on top
@@ -85,7 +86,7 @@ function restyle(style: StyleSpecification, c: Palette): StyleSpecification {
       p["line-opacity"] = 0.8;
     } else if (id === "park" || id.startsWith("landcover")) {
       p["fill-color"] = c.park;
-      p["fill-opacity"] = 0.6;
+      p["fill-opacity"] = 0.85;
     } else if (id.startsWith("landuse")) {
       p["fill-color"] = c.landuse;
       p["fill-opacity"] = 0.8;
@@ -97,7 +98,7 @@ function restyle(style: StyleSpecification, c: Palette): StyleSpecification {
       p["fill-color"] = c.bg;
     } else if (l.type === "line" && id.startsWith("boundary")) {
       p["line-color"] = c.boundary;
-      p["line-opacity"] = 0.4;
+      p["line-opacity"] = 0.6;
     } else if (l.type === "line" && id.startsWith("railway")) {
       p["line-color"] = c.rail;
       p["line-opacity"] = 0.35;
@@ -105,10 +106,10 @@ function restyle(style: StyleSpecification, c: Palette): StyleSpecification {
       // Minor roads fade in on zoom-in; at city scale they would compete with the water.
       l.minzoom = 12.5;
       p["line-color"] = c.road;
-      p["line-opacity"] = fadeIn(12.5, 14.5, 0.35);
+      p["line-opacity"] = fadeIn(12.5, 14.5, c.roadOpacity * 0.7);
     } else if (l.type === "line" && (id.startsWith("highway") || id.startsWith("tunnel") || id.startsWith("road"))) {
       p["line-color"] = c.road;
-      p["line-opacity"] = 0.45;
+      p["line-opacity"] = c.roadOpacity;
     } else if (l.type === "fill") {
       p["fill-color"] = c.bg;
     }

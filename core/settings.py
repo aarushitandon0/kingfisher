@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     # API: build each city's scenario model in a background thread at startup, so the
     # first POST /api/scenarios does not wait ~14 s for it. Off: built on first use.
     scenario_warmup: bool = Field(default=True, alias="SCENARIO_WARMUP")
+    # Built frontend (frontend/dist) served by the API in the deployed image; unset locally.
+    static_dir: Path | None = Field(default=None, alias="STATIC_DIR")
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

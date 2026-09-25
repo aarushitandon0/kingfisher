@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -98,3 +99,12 @@ for module in (
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "env": get_settings().env, "version": app.version}
+
+
+# Deployed build (deploy/Dockerfile): the API also serves the built frontend, so the whole
+# app is one origin. Mounted last so every /api and /health route wins. Locally the Vite dev
+# server does this job and the directory is unset.
+_static = get_settings().static_dir
+if _static is not None:
+    app.mount("/", StaticFiles(directory=_static, html=True), name="frontend")
+

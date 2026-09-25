@@ -4,7 +4,8 @@
    src/lib/ramp.ts PALETTE; keep the two in step.
 
    Three distinct darkness steps that must never collapse into one another:
-   chrome (page, nav) < surface (cards) < map (a navy, not black). The map is the only
+   chrome (page, nav) < surface (cards) < map (warm graphite / warm paper, never the
+   chrome's cool hue). The map is the only
    place water is drawn, so it gets its own ground and a visible frame. */
 
 /* Dark is the default; light is opt-in via the toggle (data-theme="light"). */
@@ -31,8 +32,8 @@
   --brand-text: #6fb8e8;
 
   /* Map */
-  --map-bg: #142235;
-  --map-land: #111c2a;
+  --map-bg: #24252a;
+  --map-land: #24252a;
   --map-water: #2fa8e0;
   --map-water-dim: #4a6b85;
   --map-line-neutral: #3a4552;
@@ -111,8 +112,8 @@
   --brand-900: #0a3656;
   --brand-text: #1c6fa8;
 
-  --map-bg: #d9e4ee;
-  --map-land: #e6ecf1;
+  --map-bg: #f3efe6;
+  --map-land: #f3efe6;
   --map-water: #1583c4;
   --map-water-dim: #8eaec6;
   --map-line-neutral: #c3ccd6;
