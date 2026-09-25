@@ -8,6 +8,13 @@ Built for the **OneAquaHealth IEEE Global Hackathon 2026 — Track 6: Resilience
 (*Enable early warning & resilience planning · Gap: lack of predictive environmental tools ·
 Expected: predictive dashboards, alerts, and resilience tools*).
 
+> **Live demo: [huggingface.co/spaces/areyousheeeee/kingfisher](https://huggingface.co/spaces/areyousheeeee/kingfisher)**
+> ([open full screen](https://areyousheeeee-kingfisher.static.hf.space)). Map, alerts,
+> hydrographs, attribution, validation and FHIR export for Coimbra and Pune. It is a
+> static snapshot of the production system at the 20 Sep 2026 alert run: every response was
+> saved from the real API, and the scenario workbench replays 12 scenarios run by the real
+> engine. Arbitrary scenario runs need the full system ([Running it](#11-running-it)).
+
 | | |
 |---|---|
 | **Predict** | A 10-day forecast of turbidity and chlorophyll (NDCI) for every reach of an urban stream network, with prediction intervals (P5 to P95) |
@@ -769,6 +776,9 @@ climate on another continent) was added that way.
 - **Scenarios do not propagate downstream** yet, and every result says so.
 - **Hindcasts with observed weather are an upper bound.** The as-issued rows are the
   honest live estimate and are reported alongside.
+- **The hosted demo is a frozen snapshot**, not a live service: it shows the 20 Sep 2026
+  alert run and only the 12 precomputed scenarios. It is refreshed by re-building it
+  (below), not by a scheduler.
 
 ## 11. Running it
 
@@ -793,6 +803,24 @@ make api                             # http://localhost:8000/docs
 make web-install web                 # http://localhost:5173
 make test lint
 ```
+
+### The hosted demo
+
+Free static hosting cannot run the model, so the live demo is built in two steps. First the
+whole system goes into one container (PostGIS + API + built frontend) and is tested. Then
+every API response the UI reads is saved from that container as a JSON file.
+
+```bash
+make space                           # dist/space/: deploy/Dockerfile + trimmed DB dump + models
+docker build -t kingfisher-space dist/space
+docker run -d --name kf-space -p 7860:7860 kingfisher-space
+make snapshot                        # dist/snapshot-site/: frontend (--mode snapshot) + saved API
+hf upload <user>/kingfisher dist/snapshot-site . --repo-type space   # a static Space
+```
+
+The snapshot build (`VITE_SNAPSHOT=1`) reads `snapshot/api/...json` instead of `/api`, and
+the scenario workbench offers only the precomputed runs, saying so. The container image
+also runs on its own (`http://localhost:7860`) with live scenarios, on any Docker host.
 
 `make help` lists every target. `make data-list` shows every dataset with its source,
 licence and whether it is on disk. Nothing under `data/raw/` or `.env` is committed.
