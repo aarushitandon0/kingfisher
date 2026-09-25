@@ -251,14 +251,24 @@ Day 8  — [~] frontend: scenarios, validation, Pune        ← feature freeze 1
            reaches, 57 monotonicity violations (18%, REVIEW - bad snaps on the 30 m DEM).
            Gate: 59/312 observable. Full as-issued backfill NOT run for Pune (quota) - only
            the live run for the production forecast, so Pune's ASISSUED evaluation is absent.
-           CHECKED 2026-09-24: Pune has reaches + observations + riparian NDVI in the DB but
-           NO drivers_daily, catchment_attributes, exposure_features, frame, model, forecasts
-           or metrics. So Pune's scenarios/validation/priorities 503/404 and its map has no
-           forecast. Needs: make l2 static exposure dataset train evaluate response-check
-           live-weather forecasts-latest alerts city=pune.
+           [x] 2026-09-25 Pune built: l2 (13 weather cells), static, exposure (Overpass now
+           falls back across mirrors), dataset (16,069 OK obs), train, evaluate,
+           response-check, live-weather, forecasts-latest, alerts -> results/pune/.
+           [x] PRODUCTION CALIBRATION FIX: models/production_calibration.py applies the
+           2024-fitted CQR to every variant-A row written to `forecasts` (alerts, drift band,
+           API). LIVE rows use the ASISSUED fit (Pune: ORACLE fit, labelled). Test cov80
+           0.55-0.61 raw -> 0.76-0.78 served. It does NOT change alert decisions at 0.6
+           (the floor sits mid-distribution); drift suppressions 43 -> 13 on 2026-09-20.
+           Isotonic NOT applied live: it fixes Brier (ASISSUED turbidity -11% -> +4% vs clim)
+           but leaves ~0 flags at 0.6. OPEN DECISION for the user - do not re-tune 0.6 on test.
+           `make evaluate` now keeps head_to_head/anomaly in metrics.json if the frame sha is
+           unchanged. Vite proxy -> 127.0.0.1 (localhost cost ~2 s/request on Windows).
            [x] UI round 2 (25 Sep): dark-first, framed navy map, water-first basemap (no
            hillshade), map search + reset view, dashboard grids on Alerts/Validation,
            scenario Change map (Δ≈0 shown on the map). Rules in design.md "Round 2".
+           [x] UI round 3 (25 Sep): polish only, no features - type scale, nav tabs, sliding
+           segmented thumb, skeleton loading, phone layouts (Alerts stacked list, no sideways
+           overflow at 390/768/1024). Rules in design.md "Round 3".
 Day 9  — [ ] docs, FHIR, deploy
 Day 10 — [ ] video, SUBMIT
 ```

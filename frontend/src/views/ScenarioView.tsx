@@ -148,7 +148,7 @@ export function ScenarioView({ city, reaches }: { city: string; reaches: Loadabl
 
   return (
     <div className="page min-h-0 flex-1 overflow-y-auto !pt-5">
-      <div className="card flex items-start gap-3 px-4 py-3" role="note">
+      <div className="card flex items-start gap-3 px-4 py-3 shadow-[inset_3px_0_0_var(--brand-500),var(--shadow-sm)]" role="note">
         <svg aria-hidden viewBox="0 0 16 16" width="18" height="18" className="mt-px shrink-0 text-brand-300">
           <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" />
           <path d="M8 7v4.5M8 4.6v.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -226,7 +226,7 @@ export function ScenarioView({ city, reaches }: { city: string; reaches: Loadabl
             {!result && selectedCount === 0 && (
               <p className="map-panel pointer-events-none absolute top-3 left-3 z-10 max-w-[min(440px,calc(100%-5rem))] px-4 py-3 text-[13px] text-ink">
                 <span className="font-semibold">Step 1.</span> {lasso ? "Draw around the reaches to include." : "Click reaches to add them, switch to Lasso, or use Select all observable."}{" "}
-                <span className="text-muted">Only coloured (observable) reaches return exceedance days; hatched ones have no threshold.</span>
+                <span className="hidden text-muted sm:inline">Only coloured (observable) reaches return exceedance days; hatched ones have no threshold.</span>
               </p>
             )}
             {hoveredResult && <ChangeCard r={hoveredResult} />}
@@ -391,7 +391,7 @@ function MapNotice({ s, mode }: { s: Summary; mode: MapMode }) {
 function ChangeCard({ r }: { r: ReachResult }) {
   const v = verdict(r);
   return (
-    <div className="map-panel pointer-events-none absolute bottom-8 left-3 z-20 w-[min(360px,calc(100%-260px))] px-4 py-3" aria-hidden>
+    <div className="map-panel pointer-events-none absolute bottom-8 left-3 z-20 w-[min(360px,calc(100%-1.5rem))] px-4 py-3 md:w-[min(360px,calc(100%-260px))]" aria-hidden>
       <div className="flex items-center justify-between gap-3">
         <span className="font-mono text-[13px] font-semibold text-ink">{r.reach_id}</span>
         <span className="t-dense text-muted">{varShort(r.variable)}</span>
@@ -415,29 +415,37 @@ function ChangeCard({ r }: { r: ReachResult }) {
 }
 
 function MapLegend({ result, mode, variable }: { result: boolean; mode: MapMode; variable: Variable }) {
+  // Open by default where there is room; on a phone it would cover most of the map.
+  const [open, setOpen] = useState(() => typeof window === "undefined" || !!window.matchMedia?.("(min-width: 768px)").matches);
+  const title = !result ? "Peak P(exceed), current forecast" : mode === "change" ? `Change in exceedance days, ${varShort(variable)}` : `Exceedance days per year, ${varShort(variable)}`;
   return (
-    <div className="map-panel absolute right-3 bottom-8 z-10 w-[220px] px-4 py-3 text-[12px]">
-      <p className="t-eyebrow mb-2">
-        {!result ? "Peak P(exceed), current forecast" : mode === "change" ? `Change in exceedance days, ${varShort(variable)}` : `Exceedance days per year, ${varShort(variable)}`}
-      </p>
-      <div className="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1.5">
-        {result && mode === "change"
-          ? changeLegend.map((s) => (
-              <div key={s.label} className="contents">
-                <Swatch color={s.color} width={4} />
-                <span className="text-muted">{s.label}</span>
-              </div>
-            ))
-          : legendStops(result ? DAYS_BREAKS : PROB_BREAKS, (v) => (result ? v.toFixed(0) : v.toFixed(1))).map((s) => (
-              <div key={s.label} className="contents">
-                <Swatch color={s.color} width={s.width - 1} />
-                <span className="t-value-sm">{s.label}</span>
-              </div>
-            ))}
-        <Swatch hatch />
-        <span className="text-muted">{result ? "no estimate (no threshold)" : "no threshold"}</span>
-      </div>
-      {result && mode === "change" && <p className="t-dense mt-2 text-faint">Tags along each reach carry the signed change.</p>}
+    <div className="map-panel absolute right-3 bottom-8 z-10 w-[220px] max-w-[calc(100%-1.5rem)] text-[12px]">
+      <button type="button" aria-expanded={open} aria-controls="scenario-legend" onClick={() => setOpen(!open)} className="flex w-full items-start gap-2 rounded-[var(--radius-md)] px-4 py-2.5 text-left">
+        <Chevron className="mt-px text-muted" />
+        <span className="t-eyebrow">{title}</span>
+      </button>
+      {open && (
+        <div id="scenario-legend" className="px-4 pb-3">
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-2.5 gap-y-1.5">
+            {result && mode === "change"
+              ? changeLegend.map((s) => (
+                  <div key={s.label} className="contents">
+                    <Swatch color={s.color} width={4} />
+                    <span className="text-muted">{s.label}</span>
+                  </div>
+                ))
+              : legendStops(result ? DAYS_BREAKS : PROB_BREAKS, (v) => (result ? v.toFixed(0) : v.toFixed(1))).map((s) => (
+                  <div key={s.label} className="contents">
+                    <Swatch color={s.color} width={s.width - 1} />
+                    <span className="t-value-sm">{s.label}</span>
+                  </div>
+                ))}
+            <Swatch hatch />
+            <span className="text-muted">{result ? "no estimate (no threshold)" : "no threshold"}</span>
+          </div>
+          {result && mode === "change" && <p className="t-dense mt-2 text-faint">Tags along each reach carry the signed change.</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -455,7 +463,7 @@ function Stepper({ step, done }: { step: number; done: boolean[] }) {
               <span
                 aria-hidden
                 className={`inline-grid h-7 w-7 shrink-0 place-items-center rounded-full text-[12px] font-semibold ${
-                  done[i] ? "bg-brand text-white" : step === n ? "border-2 border-brand text-brand-text" : "border-2 border-hairline-strong text-faint"
+                  done[i] ? "bg-brand text-white" : step === n ? "border-2 border-brand text-brand-text shadow-[0_0_0_4px_var(--brand-50)]" : "border-2 border-hairline-strong text-faint"
                 }`}
               >
                 {done[i] ? (
@@ -466,7 +474,7 @@ function Stepper({ step, done }: { step: number; done: boolean[] }) {
                   n
                 )}
               </span>
-              <span className={`text-[13px] whitespace-nowrap ${on ? "font-semibold text-ink" : "text-faint"}`} aria-current={step === n ? "step" : undefined}>
+              <span className={`text-[13px] whitespace-nowrap ${on ? "font-semibold text-ink" : "text-faint"} ${step === n ? "" : "max-[380px]:sr-only"}`} aria-current={step === n ? "step" : undefined}>
                 {l}
               </span>
             </span>

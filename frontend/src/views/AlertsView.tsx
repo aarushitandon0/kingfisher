@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { AlertSummary, AlertsResponse, ReachCollection, Severity } from "../api/types";
-import { Card, Chevron, ErrorNote, Loading, PageHeader, Segmented, severityBorder, SeverityLabel, Stat } from "../components/bits";
+import { Card, Chevron, ErrorNote, Loading, PageHeader, Segmented, severityBorder, SeverityLabel, Skeleton, Stat } from "../components/bits";
 import { AttributionBars } from "../components/charts";
 import { Splitter, usePanelSize } from "../components/Splitter";
 import { useShortcut } from "../lib/shortcuts";
@@ -56,13 +56,13 @@ export function AlertsView({ city, reaches }: { city: string; reaches: Loadable<
   const openAlert = r?.alerts.find((a) => a.alert_id === open) ?? null;
 
   return (
-    <div className="page min-h-0 flex-1 overflow-y-auto">
+    <div className="page page-wide min-h-0 flex-1 overflow-y-auto">
       <PageHeader
         title="Alerts"
         actions={
           r?.alert_run === "OK" && (
             <>
-              <div className="search w-[240px]">
+              <div className="search w-full sm:w-[240px]">
                 <svg aria-hidden viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
                   <circle cx="7" cy="7" r="4.5" />
                   <path d="m10.5 10.5 3 3" />
@@ -89,14 +89,26 @@ export function AlertsView({ city, reaches }: { city: string; reaches: Loadable<
           </>
         )}
       </PageHeader>
-      {res.loading && <Loading what="alerts" />}
+      {res.loading && (
+        <div>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} className="skeleton block h-[116px] !rounded-[var(--radius-md)]" />
+            ))}
+          </div>
+          <div className="card mt-6 p-5">
+            <Skeleton label="alerts" lines={8} />
+          </div>
+        </div>
+      )}
       <ErrorNote error={res.error} what="Alerts" />
       {r && <RunSummary r={r} shown={shown} toggle={(s) => setShown({ ...shown, [s]: !shown[s] })} />}
 
       {r && r.alert_run === "OK" && (
         <div className="mt-6 flex flex-col gap-6 min-[1280px]:flex-row min-[1280px]:items-start min-[1280px]:gap-2" style={{ ["--side-w" as string]: `${sideW}px` }}>
           <div className="card min-w-0 overflow-hidden min-[1280px]:flex-1">
-            <div className="max-h-[calc(100vh-150px)] overflow-auto">
+            <AlertList groups={groups} expanded={expanded} expand={(s) => setExpanded({ ...expanded, [s]: true })} onOpen={setOpen} />
+            <div className="hidden max-h-[calc(100vh-150px)] overflow-auto md:block">
               <table className="dtable min-w-[860px] text-[13px]">
                 <thead>
                   <tr>
@@ -134,13 +146,13 @@ export function AlertsView({ city, reaches }: { city: string; reaches: Loadable<
                         return (
                           <tr
                             key={a.alert_id}
-                            className={`row-hover h-11 cursor-pointer ${open === a.alert_id ? "bg-raised" : ""}`}
+                            className={`row-hover group h-11 cursor-pointer ${open === a.alert_id ? "bg-raised" : ""}`}
                             onClick={() => setOpen(a.alert_id)}
                             onMouseEnter={() => useStore.getState().hover(a.reach_id)}
                             onMouseLeave={() => useStore.getState().hover(null)}
                           >
                             <td className={b.className} style={b.style}>
-                              <span className="font-mono text-[12.5px] font-medium text-ink">{a.reach_id}</span> <span className="text-muted">{a.reach_name ?? ""}</span>
+                              <span className="font-mono text-[12.5px] font-medium whitespace-nowrap text-ink">{a.reach_id}</span> <span className="text-muted">{a.reach_name ?? ""}</span>
                             </td>
                             <td className="whitespace-nowrap">
                               <SeverityLabel s={a.severity} small />
@@ -159,7 +171,7 @@ export function AlertsView({ city, reaches }: { city: string; reaches: Loadable<
                                   e.stopPropagation();
                                   setOpen(a.alert_id);
                                 }}
-                                className="btn btn-ghost btn-icon !h-9 hover:!text-brand-300"
+                                className="btn btn-ghost btn-icon !h-8 !w-8 text-faint group-hover:text-ink hover:!text-brand-300"
                               >
                                 <Chevron />
                               </button>
@@ -204,6 +216,67 @@ export function AlertsView({ city, reaches }: { city: string; reaches: Loadable<
         </div>
       )}
       {openAlert && <AlertDrawer a={openAlert} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}
+
+type Group = readonly [Severity, AlertSummary[]];
+
+/** Phones: the same rows as the table, stacked, so nothing scrolls sideways. */
+function AlertList({ groups, expanded, expand, onOpen }: { groups: Group[]; expanded: Record<string, boolean>; expand: (s: Severity) => void; onOpen: (id: string) => void }) {
+  return (
+    <div className="md:hidden">
+      {groups.map(([s, g]) => {
+        if (g.length === 0) return null;
+        const all = expanded[s] || g.length <= GROUP_PREVIEW + 5;
+        const visible = all ? g : g.slice(0, GROUP_PREVIEW);
+        return (
+          <section key={s} aria-label={`${s === "ALERT" ? "Alert" : s === "WATCH" ? "Watch" : "Insufficient evidence"} rows`}>
+            <header className="sticky top-0 z-[1] flex items-center gap-2.5 border-b border-hairline bg-raised px-4 py-2.5">
+              <h2 className="t-h3">{s === "ALERT" ? "Alert" : s === "WATCH" ? "Watch" : "Insufficient evidence"}</h2>
+              <span className="t-value-sm rounded-full bg-surface px-2 py-0.5 text-muted">{g.length}</span>
+            </header>
+            <ul>
+              {visible.map((a) => {
+                const b = severityBorder(a.severity);
+                const reason = a.severity === "INSUFFICIENT_EVIDENCE" ? reasonText(a.suppressed_reason) : exposureSummary(a.exposure);
+                return (
+                  <li key={a.alert_id} className="border-b border-hairline last:border-b-0">
+                    <button type="button" onClick={() => onOpen(a.alert_id)} className={`row-hover flex w-full items-start gap-3 py-3 pr-3 pl-4 text-left ${b.className}`} style={b.style}>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline gap-2">
+                          <span className="font-mono text-[13px] font-medium whitespace-nowrap text-ink">{a.reach_id}</span>
+                          <span className="truncate text-[13px] text-muted">{a.reach_name ?? ""}</span>
+                        </span>
+                        <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted">
+                          <span>{VAR_SHORT[a.variable] ?? a.variable}</span>
+                          <span className="t-value-sm">{fmtRange(a.window_start, a.window_end)}</span>
+                          {a.exceedance_prob !== null ? (
+                            <span>
+                              P <span className="t-value-sm font-semibold text-ink">{fmtProb(a.exceedance_prob)}</span>
+                            </span>
+                          ) : (
+                            <span className="text-faint italic">withheld</span>
+                          )}
+                        </span>
+                        <span className="t-dense mt-1 line-clamp-2 block text-muted">{reason}</span>
+                      </span>
+                      <Chevron className="mt-1 text-faint" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {!all && (
+              <div className="border-b border-hairline px-4 py-2.5">
+                <button type="button" className="btn btn-sm w-full" onClick={() => expand(s)}>
+                  Show all {g.length} rows
+                </button>
+              </div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

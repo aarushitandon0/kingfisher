@@ -1,0 +1,370 @@
+{
+  "city": "coimbra",
+  "generated_at": "2026-09-24T19:56:11+00:00",
+  "method": "split-conformal CQR (Romano, Patterson & Candes 2019), models/calibration.py",
+  "variant": "A",
+  "fitted_on": "variant A walk-forward validation fold only",
+  "fits": {
+    "ASISSUED": {
+      "target_coverage": 0.8,
+      "method": "CQR (Romano et al. 2019)",
+      "ndci": {
+        "h01_03": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 3939,
+            "q_adjust": 0.03982153634673627,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.6039603960396039
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h04_07": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 5252,
+            "q_adjust": 0.05049121813612244,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.5742574257425742
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h08_10": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 3939,
+            "q_adjust": 0.05276349567208244,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.5661335364305662
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        }
+      },
+      "turbidity_proxy": {
+        "h01_03": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 3939,
+            "q_adjust": 0.21552872095270637,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.5818735719725818
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h04_07": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 5252,
+            "q_adjust": 0.2414757964409775,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.5753998476770754
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h08_10": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 3939,
+            "q_adjust": 0.259178325478687,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.543031226199543
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        }
+      }
+    },
+    "ORACLE": {
+      "target_coverage": 0.8,
+      "method": "CQR (Romano et al. 2019)",
+      "ndci": {
+        "h01_03": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 4737,
+            "q_adjust": 0.03833479139803009,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.6185349377242981
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h04_07": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 6312,
+            "q_adjust": 0.04171481823049777,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.5975918884664132
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h08_10": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 4721,
+            "q_adjust": 0.04607272120655309,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.5905528489726752
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        }
+      },
+      "turbidity_proxy": {
+        "h01_03": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 4737,
+            "q_adjust": 0.1870651290254699,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.621490394764619
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h04_07": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 6312,
+            "q_adjust": 0.20574905432582602,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.6131178707224335
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h08_10": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 4721,
+            "q_adjust": 0.2260463829067345,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.5839864435500953
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        }
+      }
+    }
+  },
+  "live_rows_use_fit": "ASISSUED",
+  "live_note": null,
+  "probability": "exceedance probability from the calibrated quantiles; isotonic recalibration is scored in head_to_head.json but not applied live",
+  "coverage_check": {
+    "ASISSUED": {
+      "val": {
+        "fit": "ASISSUED",
+        "n": 26260,
+        "by_variable": {
+          "ndci": {
+            "coverage_80_raw": 0.5807,
+            "coverage_80_calibrated": 0.8002
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.5676,
+            "coverage_80_calibrated": 0.8002
+          }
+        },
+        "note": "in-sample (the fit's own rows)"
+      },
+      "test": {
+        "fit": "ASISSUED",
+        "n": 29012,
+        "by_variable": {
+          "ndci": {
+            "coverage_80_raw": 0.5993,
+            "coverage_80_calibrated": 0.7774
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.5487,
+            "coverage_80_calibrated": 0.7767
+          }
+        },
+        "note": "held out"
+      }
+    },
+    "ORACLE": {
+      "val": {
+        "fit": "ORACLE",
+        "n": 31540,
+        "by_variable": {
+          "ndci": {
+            "coverage_80_raw": 0.6018,
+            "coverage_80_calibrated": 0.8003
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.6069,
+            "coverage_80_calibrated": 0.8003
+          }
+        },
+        "note": "in-sample (the fit's own rows)"
+      },
+      "test": {
+        "fit": "ORACLE",
+        "n": 64450,
+        "by_variable": {
+          "ndci": {
+            "coverage_80_raw": 0.6059,
+            "coverage_80_calibrated": 0.7707
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.5491,
+            "coverage_80_calibrated": 0.7607
+          }
+        },
+        "note": "held out"
+      }
+    }
+  }
+}

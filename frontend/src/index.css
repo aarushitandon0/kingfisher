@@ -72,17 +72,25 @@ body {
 /* ---- Type scale -------------------------------------------------------------------- */
 .t-display {
   font-family: var(--font-display);
-  font-size: 34px;
-  line-height: 40px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 650;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+@media (min-width: 768px) {
+  .t-display {
+    font-size: 30px;
+    line-height: 36px;
+  }
 }
 .t-title {
   font-family: var(--font-display);
-  font-size: 22px;
-  line-height: 28px;
+  font-size: 20px;
+  line-height: 26px;
   font-weight: 600;
   letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 .t-h3 {
   font-family: var(--font-display);
@@ -112,16 +120,16 @@ body {
   font-size: 11px;
   line-height: 14px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-tertiary);
 }
 /* Big stat-tile numbers. */
 .t-stat {
   font-family: var(--font-display);
-  font-size: 30px;
-  line-height: 34px;
-  font-weight: 700;
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 650;
   letter-spacing: -0.02em;
 }
 /* Mono is for measured or computed values only - never labels. */
@@ -306,17 +314,33 @@ summary,
     background-color 150ms ease,
     border-color 120ms ease,
     box-shadow 120ms ease,
-    opacity 120ms ease;
+    opacity 120ms ease,
+    transform 80ms ease;
+}
+/* Press feedback: a 1px settle, never a lift. */
+.btn:active:not(:disabled),
+.ctl:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 @layer components {
   /* ---- Page shell -------------------------------------------------------------------- */
   .page {
-    padding: 24px 16px 48px;
+    padding: 20px 16px 48px;
   }
   @media (min-width: 1024px) {
     .page {
-      padding: 32px 32px 56px;
+      padding: 28px 32px 56px;
+    }
+  }
+  /* Very wide screens: text-heavy pages stop growing at 1760px of content; the map views
+     stay full-bleed. Done with padding so the page keeps its scrollbar at the window edge. */
+  .page-wide {
+    padding-inline: max(16px, calc((100% - 1760px) / 2));
+  }
+  @media (min-width: 1024px) {
+    .page-wide {
+      padding-inline: max(32px, calc((100% - 1760px) / 2));
     }
   }
 
@@ -554,9 +578,12 @@ summary,
   }
   .dtable tbody td {
     border-bottom: 1px solid var(--border);
-    padding-top: 8px;
-    padding-bottom: 8px;
+    padding-top: 7px;
+    padding-bottom: 7px;
     vertical-align: middle;
+  }
+  .dtable tbody tr:last-child td {
+    border-bottom-color: transparent;
   }
   .dtable :is(th, td):first-child {
     padding-left: 16px;
@@ -574,9 +601,52 @@ summary,
     font-weight: 600;
   }
 
-  /* Inactive nav tabs: a tint on hover. */
-  button:hover > .hover-tint {
+  /* Top-bar tabs: a tint on hover, a brand underline that grows in when active. */
+  .nav-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    isolation: isolate;
+    white-space: nowrap;
+  }
+  .nav-tab > .nav-tab-bg {
+    position: absolute;
+    inset: 8px 2px;
+    z-index: -1;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    transition: background-color 150ms ease;
+  }
+  .nav-tab:hover {
+    color: var(--text-primary);
+  }
+  .nav-tab:hover > .nav-tab-bg {
     background: var(--surface-raised);
+  }
+  .nav-tab[aria-current="page"] {
+    color: var(--brand-300);
+  }
+  .nav-tab[aria-current="page"] > .nav-tab-bg {
+    background: var(--brand-50);
+  }
+  .nav-tab::after {
+    content: "";
+    position: absolute;
+    inset: auto 12px -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--brand-500);
+    transform: scaleX(0);
+    transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .nav-tab[aria-current="page"]::after {
+    transform: scaleX(1);
   }
 
   /* Table rows answer the pointer. */
@@ -682,6 +752,36 @@ summary::-webkit-details-marker {
 /* The one orchestrated moment: scenario bars descend from baseline to scenario. */
 .bar-descend {
   transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Loading placeholder in the shape of what is coming. Static under reduced motion. */
+.skeleton {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface-raised) 0%, color-mix(in srgb, var(--surface-raised) 55%, var(--border-strong)) 50%, var(--surface-raised) 100%);
+  background-size: 200% 100%;
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+@keyframes skeleton {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* Segmented control: the filled thumb slides to the chosen option. */
+.seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  border-radius: 999px;
+  background: var(--brand-500);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {

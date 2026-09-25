@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { ApiError } from "../api/client";
 import type { Observability, Severity } from "../api/types";
 import { rampColor, SEVERITY_COLOR } from "../lib/ramp";
@@ -20,9 +20,9 @@ export function PageHeader({ title, children, actions }: { title: string; childr
     <header className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
       <div className="min-w-0">
         <h1 className="t-display">{title}</h1>
-        {children && <div className="t-ui mt-1 max-w-4xl text-muted">{children}</div>}
+        {children && <div className="t-ui mt-1.5 max-w-3xl text-muted">{children}</div>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-3">{actions}</div>}
+      {actions && <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">{actions}</div>}
     </header>
   );
 }
@@ -137,6 +137,18 @@ export function Loading({ what, className = "" }: { what: string; className?: st
   );
 }
 
+/** Placeholder lines in the shape of the content that is loading. */
+export function Skeleton({ lines = 3, className = "", label }: { lines?: number; className?: string; label: string }) {
+  return (
+    <div className={`flex flex-col gap-2.5 ${className}`} role="status" aria-live="polite">
+      <span className="sr-only">Loading {label}</span>
+      {Array.from({ length: lines }, (_, i) => (
+        <span key={i} aria-hidden className="skeleton block h-3.5" style={{ width: `${[92, 78, 64, 86, 70][i % 5]}%` }} />
+      ))}
+    </div>
+  );
+}
+
 /** A line swatch; `width` matches the map's line weight for that band. */
 export function Swatch({ color, hatch, dashed, width = 3 }: { color?: string; hatch?: boolean; dashed?: boolean; width?: number }) {
   if (hatch) return <span aria-hidden className="hatch inline-block h-2.5 w-6 rounded-[2px] align-middle" />;
@@ -184,7 +196,20 @@ export function Segmented<T extends string>({
   className?: string;
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const track = useRef<HTMLDivElement>(null);
   const idx = Math.max(0, options.findIndex((o) => o.value === value));
+  // The thumb follows the chosen option; measured, so labels of any width line up.
+  const [thumb, setThumb] = useState<{ x: number; w: number } | null>(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = refs.current[idx];
+      if (el) setThumb({ x: el.offsetLeft, w: el.offsetWidth });
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro && track.current) ro.observe(track.current);
+    return () => ro?.disconnect();
+  }, [idx, options.length]);
   function onKey(e: React.KeyboardEvent) {
     const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
     if (!d) return;
@@ -195,11 +220,13 @@ export function Segmented<T extends string>({
   }
   return (
     <div
+      ref={track}
       role="radiogroup"
       aria-label={label}
       onKeyDown={onKey}
-      className={`inline-flex max-w-full shrink-0 self-start overflow-x-auto rounded-full bg-raised p-[3px] shadow-[inset_0_0_0_1px_var(--border)] ${className}`}
+      className={`relative isolate inline-flex max-w-full shrink-0 self-start overflow-x-auto rounded-full bg-raised p-[3px] shadow-[inset_0_0_0_1px_var(--border)] ${className}`}
     >
+      {thumb && <span aria-hidden className="seg-thumb -z-10" style={{ width: thumb.w, transform: `translateX(${thumb.x}px)` }} />}
       {options.map((o, i) => {
         const on = i === idx;
         return (
@@ -214,7 +241,7 @@ export function Segmented<T extends string>({
             tabIndex={on ? 0 : -1}
             onClick={() => onChange(o.value)}
             className={`${dense ? "h-7 px-3 text-[12px]" : "h-[30px] px-3.5 text-[13px]"} rounded-full leading-4 font-medium whitespace-nowrap ${
-              on ? "bg-brand text-[var(--on-brand)] shadow-[var(--shadow-sm)]" : "text-muted hover:text-ink"
+              on ? `text-[var(--on-brand)] ${thumb ? "" : "bg-brand"}` : "text-muted hover:text-ink"
             }`}
           >
             {o.label}

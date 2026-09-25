@@ -35,6 +35,13 @@ log = get_logger(__name__)
 
 GHS_SOURCE = "GHS-POP E2020 R2023A 3ss (JRC, CC-BY-4.0)"
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Public mirrors of the same database, tried in order when the main instance times out
+# (it returns 504 under load). Same query -> same cache key, whichever mirror answered.
+OVERPASS_MIRRORS = (
+    OVERPASS_URL,
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+)
 
 # The Day-0 Overpass extract did not ask for water access points, so every reach would
 # read "0 water access points" - an artefact of the query, not a fact about the river.
@@ -62,17 +69,25 @@ def load_water_access(bbox: dict[str, float]) -> list[dict[str, Any]]:
     )
 
     def fetch() -> dict[str, Any]:
-        r = requests.post(
-            OVERPASS_URL,
-            data={"data": query},
-            headers={"User-Agent": "kingfisher-hackathon/0.1 (urban stream monitoring)"},
-            timeout=180,
-        )
-        r.raise_for_status()
-        payload: dict[str, Any] = r.json()
-        if "elements" not in payload:
-            raise RuntimeError(f"Overpass returned no `elements`: {str(payload)[:300]}")
-        return payload
+        errors: list[str] = []
+        for url in OVERPASS_MIRRORS:
+            try:
+                r = requests.post(
+                    url,
+                    data={"data": query},
+                    headers={"User-Agent": "kingfisher-hackathon/0.1 (urban stream monitoring)"},
+                    timeout=180,
+                )
+                r.raise_for_status()
+                payload: dict[str, Any] = r.json()
+            except (requests.RequestException, ValueError) as exc:
+                errors.append(f"{url}: {exc}")
+                log.warning("overpass_mirror_failed", url=url, error=str(exc)[:200])
+                continue
+            if "elements" not in payload:
+                raise RuntimeError(f"Overpass returned no `elements`: {str(payload)[:300]}")
+            return payload
+        raise RuntimeError("every Overpass mirror failed:\n  " + "\n  ".join(errors))
 
     entry = DiskCache("osm").get_or_fetch(
         {"query": query},

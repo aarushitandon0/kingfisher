@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Area, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis, Bar, BarChart } from "recharts";
 import { api } from "../api/client";
 import type { MetricsDocument, ScoredBlock, Variable, VariableMetrics } from "../api/types";
-import { Card, Chevron, ErrorNote, Loading, PageHeader, Segmented, VerdictBadge } from "../components/bits";
+import { Card, Chevron, ErrorNote, PageHeader, Segmented, Skeleton, VerdictBadge } from "../components/bits";
 import { TooltipLines } from "../components/charts";
 import { Splitter, usePanelSize } from "../components/Splitter";
 import { fmtDay, fmtNum, humanize, VARIABLE_LABEL } from "../lib/format";
@@ -23,7 +23,7 @@ export function ValidationView({ city }: { city: string }) {
   const vm: VariableMetrics | undefined = doc?.folds[fold]?.[variable];
 
   return (
-    <div className="page min-h-0 flex-1 overflow-y-auto">
+    <div className="page page-wide min-h-0 flex-1 overflow-y-auto">
       <PageHeader
         title="Validation"
         actions={
@@ -48,7 +48,23 @@ export function ValidationView({ city }: { city: string }) {
           </>
         )}
       </PageHeader>
-      {res.loading && <Loading what="metrics" />}
+      {res.loading && (
+        <div>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 max-md:[&>*:last-child:nth-child(odd)]:col-span-2">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <span key={i} aria-hidden className="skeleton block h-[116px] !rounded-[var(--radius-md)]" />
+            ))}
+          </div>
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="card p-5">
+              <Skeleton label="metrics" lines={7} />
+            </div>
+            <div className="card p-5">
+              <Skeleton label="metrics" lines={5} />
+            </div>
+          </div>
+        </div>
+      )}
       <ErrorNote error={res.error} what="Validation metrics" />
       {res.data && doc && (
         <>
@@ -56,10 +72,10 @@ export function ValidationView({ city }: { city: string }) {
             <p className="t-ui mt-4 text-muted">No {variable} metrics in the {fold} fold.</p>
           ) : (
             <>
-              <Kpis vm={vm} />
+              <Kpis vm={vm} doc={doc} fold={fold} variable={variable} />
               <div
                 ref={grid}
-                className={`relative mt-6 grid gap-6 lg:grid-cols-2 ${leftW !== null ? "lg:grid-cols-[var(--left-w)_minmax(0,1fr)]" : ""}`}
+                className={`relative mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2 [&>*]:min-w-0 ${leftW !== null ? "lg:grid-cols-[var(--left-w)_minmax(0,1fr)]" : ""}`}
                 style={{ ["--left-w" as string]: `${leftW ?? 0}px` }}
               >
                 {/* The column gap is a drag handle (double-click: back to half and half). */}
@@ -102,13 +118,26 @@ export function ValidationView({ city }: { city: string }) {
 
 /** Headline numbers for the chosen fold and variable, all read from metrics.json. Skill is
  * green where the model beats the baseline and red where it loses - the table's one job. */
-function Kpis({ vm }: { vm: VariableMetrics }) {
+function Kpis({ vm, doc, fold, variable }: { vm: VariableMetrics; doc: MetricsDocument; fold: string; variable: Variable }) {
   const a = vm.all_horizons;
+  // The fold metrics are the raw model; what the forecasts table serves is CQR-calibrated.
+  const calibrated = doc.production_calibration?.coverage_80?.ORACLE?.[fold]?.[variable]?.coverage_80_calibrated;
   const tiles: [string, React.ReactNode, React.ReactNode, number | null][] = [
     ["CRPS skill vs seasonal-naive", fmtSkill(a?.skill?.seasonal_naive?.crps), "all lead days; > 0 beats it", a?.skill?.seasonal_naive?.crps ?? null],
     ["CRPS skill vs climatology", fmtSkill(a?.skill?.climatology?.crps), "all lead days; > 0 beats it", a?.skill?.climatology?.crps ?? null],
     ["Brier skill vs climatology", fmtSkill(vm.probability.brier_skill_vs_climatology), "exceedance probability", vm.probability.brier_skill_vs_climatology],
-    ["80% interval coverage", fmtNum(a?.common?.model.coverage_80, 2), "nominal 0.80", null],
+    [
+      "80% interval coverage",
+      fmtNum(a?.common?.model.coverage_80, 2),
+      calibrated == null ? (
+        "raw model; nominal 0.80"
+      ) : (
+        <>
+          raw model; <span className="text-ink">{fmtNum(calibrated, 2)}</span> as served (conformal, fit on 2024)
+        </>
+      ),
+      null,
+    ],
     [
       "Reaches scored",
       vm.per_reach.reaches_scored,
@@ -119,7 +148,7 @@ function Kpis({ vm }: { vm: VariableMetrics }) {
     ],
   ];
   return (
-    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+    <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 max-md:[&>*:last-child:nth-child(odd)]:col-span-2">
       {tiles.map(([label, value, note, skill]) => (
         <div key={label} className="card relative overflow-hidden p-4 pt-[18px]">
           <span
@@ -346,34 +375,36 @@ function Observability({ vm }: { vm: VariableMetrics }) {
   const drv = o.driver_only;
   return (
     <Card title="Observable vs driver-only" caption="The satellite can only score reaches it can see." bodyClass="!px-0">
-      <table className="dtable text-[13px]">
-        <thead>
-          <tr>
-            <th />
-            <th className="!text-right">Scored reach-days</th>
-            <th className="!text-right">MAE</th>
-            <th className="!text-right">CRPS skill vs clim.</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr className="row-hover">
-            <td>Optically observable</td>
-            <td className="num">{obs?.n_model?.toLocaleString("en-GB") ?? "—"}</td>
-            <td className="num">{fmtNum(obs?.common?.model.mae, 3)}</td>
-            <td className="num">
-              <SkillValue v={obs?.skill?.climatology?.crps} />
-            </td>
-          </tr>
-          <tr className="row-hover">
-            <td>Driver-predicted</td>
-            <td className="num">{drv?.n_model?.toLocaleString("en-GB") ?? "—"}</td>
-            <td className="num">{fmtNum(drv?.common?.model.mae, 3)}</td>
-            <td className="num">
-              <SkillValue v={drv?.skill?.climatology?.crps} />
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="dtable min-w-[420px] text-[13px]">
+          <thead>
+            <tr>
+              <th />
+              <th className="!text-right">Scored reach-days</th>
+              <th className="!text-right">MAE</th>
+              <th className="!text-right">CRPS skill vs clim.</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="row-hover">
+              <td>Optically observable</td>
+              <td className="num">{obs?.n_model?.toLocaleString("en-GB") ?? "—"}</td>
+              <td className="num">{fmtNum(obs?.common?.model.mae, 3)}</td>
+              <td className="num">
+                <SkillValue v={obs?.skill?.climatology?.crps} />
+              </td>
+            </tr>
+            <tr className="row-hover">
+              <td>Driver-predicted</td>
+              <td className="num">{drv?.n_model?.toLocaleString("en-GB") ?? "—"}</td>
+              <td className="num">{fmtNum(drv?.common?.model.mae, 3)}</td>
+              <td className="num">
+                <SkillValue v={drv?.skill?.climatology?.crps} />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       {(drv?.n_model ?? 0) === 0 && (
         <p className="t-dense mx-5 mt-3 hatch-border pl-3 text-muted">
           Driver-predicted reaches cannot be scored: they have no clean water pixels at 10 m, so there is nothing observed to score them against. Their forecasts are unvalidated here, which is why they are capped at watch.

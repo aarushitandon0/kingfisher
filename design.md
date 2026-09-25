@@ -4,6 +4,24 @@ Visual direction for the frontend. Read alongside `MASTERSPEC.md` §13.
 
 ---
 
+## Round 3 (25 Sep 2026) — polish pass: type, feedback, phones
+
+Supersedes Round 2 where they conflict. No new colours or tokens.
+
+- **Type**: page titles 30px (26px on phones) at weight 650, balanced wrapping; stat numbers
+  28px/650; eyebrows tracked 0.05em. Heavier than this reads as a poster, not an instrument.
+- **Top-bar tabs** are `.nav-tab`: hover tint, active gets a `--brand-50` pill plus a brand
+  underline that grows in. Icons drop below 400px so all four tabs fit.
+- **Segmented controls** have a sliding thumb (`.seg-thumb`, measured per option).
+- **Press feedback**: `.btn` / `.ctl` settle 1px on `:active`. Still no hover lifts.
+- **Loading** is shaped like what is coming (`.skeleton`, `<Skeleton>`): stat tiles and
+  table lines on Alerts/Validation, the city summary on the map sidebar, a pill on the map.
+- **Phones**: Alerts renders the same rows as a stacked list under 768px (no sideways
+  table); map overlays shorten labels; the scenario legend collapses by default; every
+  wide table sits in its own horizontal scroller inside its card.
+- **Very wide screens**: Alerts and Validation cap content at 1760px (`.page-wide`); the map
+  views stay full-bleed.
+
 ## Round 2 (25 Sep 2026) — map contrast, water-first basemap, dashboard grids, Change map
 
 Supersedes everything below where they conflict.

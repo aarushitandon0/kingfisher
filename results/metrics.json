@@ -1,6 +1,6 @@
 {
   "city": "coimbra",
-  "generated_at": "2026-09-21T13:30:15+00:00",
+  "generated_at": "2026-09-24T19:56:08+00:00",
   "model_versions": {
     "A.wf-val": "gbm-0.2.0+coimbra.A.wf-val.be15da96a6",
     "A.wf-test": "gbm-0.2.0+coimbra.A.wf-test.a62ea5ba89",
@@ -38097,6 +38097,58 @@
     "lead_time_distribution": "needs issued alerts scored against incidents.",
     "false_alarm_rate_after_guardrails": "the guardrails exist (engine/alerts.py) but have not been replayed over the walk-forward period; the pre-guardrail operating point is under probability.operating_point_pre_guardrail.",
     "transfer_coimbra_to_pune": "no Pune frame yet (Day 8)."
+  },
+  "production_calibration": {
+    "method": "split-conformal CQR (Romano, Patterson & Candes 2019), models/calibration.py",
+    "live_rows_use_fit": "ASISSUED",
+    "live_note": null,
+    "note": "fold metrics above are the RAW model; the forecasts table, alerts and API use the calibrated intervals (coverage below, test = held out)",
+    "coverage_80": {
+      "ASISSUED": {
+        "val": {
+          "ndci": {
+            "coverage_80_raw": 0.5807,
+            "coverage_80_calibrated": 0.8002
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.5676,
+            "coverage_80_calibrated": 0.8002
+          }
+        },
+        "test": {
+          "ndci": {
+            "coverage_80_raw": 0.5993,
+            "coverage_80_calibrated": 0.7774
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.5487,
+            "coverage_80_calibrated": 0.7767
+          }
+        }
+      },
+      "ORACLE": {
+        "val": {
+          "ndci": {
+            "coverage_80_raw": 0.6018,
+            "coverage_80_calibrated": 0.8003
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.6069,
+            "coverage_80_calibrated": 0.8003
+          }
+        },
+        "test": {
+          "ndci": {
+            "coverage_80_raw": 0.6059,
+            "coverage_80_calibrated": 0.7707
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.5491,
+            "coverage_80_calibrated": 0.7607
+          }
+        }
+      }
+    }
   },
   "head_to_head": {
     "city": "coimbra",

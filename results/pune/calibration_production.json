@@ -1,0 +1,192 @@
+{
+  "city": "pune",
+  "generated_at": "2026-09-24T20:32:35+00:00",
+  "method": "split-conformal CQR (Romano, Patterson & Candes 2019), models/calibration.py",
+  "variant": "A",
+  "fitted_on": "variant A walk-forward validation fold only",
+  "fits": {
+    "ORACLE": {
+      "target_coverage": 0.8,
+      "method": "CQR (Romano et al. 2019)",
+      "ndci": {
+        "h01_03": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 5979,
+            "q_adjust": 0.017682304816771632,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.6596420806154876
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h04_07": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 7740,
+            "q_adjust": 0.020799884684460493,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.6408268733850129
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h08_10": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 5805,
+            "q_adjust": 0.023461969531799853,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.6075796726959518
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        }
+      },
+      "turbidity_proxy": {
+        "h01_03": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 5979,
+            "q_adjust": 0.2471583935711137,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.557451078775715
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h04_07": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 7740,
+            "q_adjust": 0.22221012959497255,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.5717054263565892
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        },
+        "h08_10": {
+          "driver_only": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          },
+          "observable": {
+            "n": 5805,
+            "q_adjust": 0.2353103772787115,
+            "adjusted": true,
+            "reason": null,
+            "coverage_80_before": 0.5519379844961241
+          },
+          "unassessed": {
+            "n": 0,
+            "q_adjust": null,
+            "adjusted": false,
+            "reason": "no calibration rows",
+            "coverage_80_before": null
+          }
+        }
+      }
+    }
+  },
+  "live_rows_use_fit": "ORACLE",
+  "live_note": "no as-issued validation rows for this city: LIVE intervals use the ORACLE fit, a lower bound on the width forecast weather needs",
+  "probability": "exceedance probability from the calibrated quantiles; isotonic recalibration is scored in head_to_head.json but not applied live",
+  "coverage_check": {
+    "ORACLE": {
+      "val": {
+        "fit": "ORACLE",
+        "n": 39048,
+        "by_variable": {
+          "ndci": {
+            "coverage_80_raw": 0.6367,
+            "coverage_80_calibrated": 0.8001
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.5615,
+            "coverage_80_calibrated": 0.8001
+          }
+        },
+        "note": "in-sample (the fit's own rows)"
+      },
+      "test": {
+        "fit": "ORACLE",
+        "n": 69612,
+        "by_variable": {
+          "ndci": {
+            "coverage_80_raw": 0.6321,
+            "coverage_80_calibrated": 0.8289
+          },
+          "turbidity_proxy": {
+            "coverage_80_raw": 0.6519,
+            "coverage_80_calibrated": 0.8291
+          }
+        },
+        "note": "held out"
+      }
+    }
+  }
+}

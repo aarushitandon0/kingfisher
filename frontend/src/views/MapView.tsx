@@ -1,7 +1,7 @@
 import type { Map as MLMap } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { City, ReachCollection } from "../api/types";
-import { Chevron, ErrorNote, Rule, Segmented, SeverityLabel, Stat, Swatch } from "../components/bits";
+import { Chevron, ErrorNote, Rule, Segmented, SeverityLabel, Skeleton, Stat, Swatch } from "../components/bits";
 import { HydrographRail } from "../components/HydrographRail";
 import { Splitter, usePanelSize } from "../components/Splitter";
 import { useShortcut } from "../lib/shortcuts";
@@ -104,6 +104,14 @@ export function MapView({ city, reaches, timeline }: { city: City | undefined; r
               onMap={setMap}
             />
           )}
+          {!fc && !reaches.error && (
+            <div className="absolute inset-0 grid place-items-center" role="status">
+              <span className="map-panel t-dense flex items-center gap-2.5 px-3.5 py-2 text-muted">
+                <span aria-hidden className="h-2 w-2 animate-pulse rounded-full bg-water" />
+                Loading the stream network
+              </span>
+            </div>
+          )}
           {reaches.error && (
             <div className="absolute inset-x-3 top-16 z-20 md:right-auto md:max-w-md">
               <ErrorNote error={reaches.error} what="Reaches" />
@@ -147,8 +155,25 @@ export function MapView({ city, reaches, timeline }: { city: City | undefined; r
         className={`card order-3 px-5 pt-5 pb-8 md:order-none md:min-h-0 md:w-(--rail-w) md:shrink-0 md:overflow-y-auto ${railW === 0 ? "md:hidden" : ""}`}
         aria-label="Detail"
       >
-        {selected ? <ReachPanel key={selected} id={selected} /> : fc && <CitySummary city={city} fc={fc} />}
+        {selected ? <ReachPanel key={selected} id={selected} /> : fc ? <CitySummary city={city} fc={fc} /> : !reaches.error && <SummarySkeleton />}
       </aside>
+    </div>
+  );
+}
+
+/** The city summary's outline while the reach network loads. */
+function SummarySkeleton() {
+  return (
+    <div aria-hidden>
+      <span className="skeleton block h-3 w-28" />
+      <span className="skeleton mt-3 block h-8 w-44" />
+      <span className="skeleton mt-3 block h-3.5 w-56" />
+      <div className="mt-6 grid grid-cols-3 gap-3">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <span key={i} className="skeleton block h-[104px] !rounded-[var(--radius-md)]" />
+        ))}
+      </div>
+      <Skeleton label="stream network" lines={6} className="mt-8" />
     </div>
   );
 }
@@ -358,22 +383,22 @@ function LayersPanel({
   setObservability: (f: ObservabilityFilter) => void;
 }) {
   return (
-    <div className="map-panel flex flex-col gap-3 self-start p-3">
+    <div className="map-panel flex max-w-full flex-col gap-2.5 self-start p-2.5">
       <Segmented
         dense
         label="Show reaches"
         value={observability}
         onChange={setObservability}
         options={[
-          { value: "all", label: "All reaches" },
+          { value: "all", label: <>All<span className="hidden sm:inline"> reaches</span></> },
           { value: "observable", label: "Observable" },
-          { value: "driver", label: "Driver-predicted" },
+          { value: "driver", label: <>Driver<span className="hidden sm:inline">-predicted</span></> },
         ]}
       />
-      <label className="flex cursor-pointer items-center gap-2 px-1 text-[13px]">
+      <label className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-[13px] hover:bg-raised">
         <input type="checkbox" checked={showExposure} onChange={toggleExposure} />
         Exposure features
-        <span className="t-dense text-muted">(schools, parks, paths)</span>
+        <span className="t-dense hidden text-muted sm:inline">(schools, parks, paths)</span>
       </label>
     </div>
   );
@@ -399,7 +424,7 @@ function HoverReadout({
 }) {
   const has = value !== null && Number.isFinite(value);
   return (
-    <div className="map-panel pointer-events-none absolute top-3 left-1/2 z-10 hidden -translate-x-1/2 items-center gap-3 px-3.5 py-2 xl:flex" aria-hidden>
+    <div className="map-panel pointer-events-none absolute top-3 left-[364px] z-10 hidden max-w-[calc(100%-364px-4.5rem)] items-center gap-3 px-3.5 py-2 xl:flex" aria-hidden>
       {has ? <Swatch color={rampColor(value, breaks)} width={4} /> : <Swatch hatch />}
       <span className="flex flex-col">
         <span className="flex items-center gap-2">

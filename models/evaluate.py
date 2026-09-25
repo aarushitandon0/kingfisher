@@ -1047,13 +1047,38 @@ def forecast_records(pred: pd.DataFrame) -> pd.DataFrame:
     return out[FORECAST_COLUMNS]
 
 
-def persist_forecasts(pred: pd.DataFrame) -> int:
+DOWNSTREAM_SECTIONS = ("head_to_head", "production_model", "anomaly")
+
+
+def _carry_downstream_sections(path: Path, metrics: dict[str, Any]) -> None:
+    """`make h2h` and `make anomaly` merge their sections into metrics.json after this
+    step. Re-running evaluate must not silently drop them - but only a run on the SAME
+    modelling frame may keep them; a new frame means they are stale and must be re-run."""
+    if not path.exists():
+        return
+    old = json.loads(path.read_text(encoding="utf-8"))
+    if old.get("frame_sha256") != metrics.get("frame_sha256"):
+        dropped = [k for k in DOWNSTREAM_SECTIONS if k in old]
+        if dropped:
+            log.warning("evaluate.downstream_sections_stale", dropped=dropped)
+        return
+    for key in DOWNSTREAM_SECTIONS:
+        if key in old:
+            metrics[key] = old[key]
+    if "anomaly" in metrics:
+        metrics.get("not_computed", {}).pop("anomaly_precision_recall_f1", None)
+
+
+def persist_forecasts(pred: pd.DataFrame, city: str) -> int:
     """Replace every row of these model versions, then bulk-insert."""
     from sqlalchemy import text
 
     from core.db import bulk_upsert, session_scope
+    from models.production_calibration import calibrate_for_city
 
-    rows = forecast_records(pred)
+    # Variant A intervals are written CQR-calibrated (models/production_calibration.py):
+    # the drift guardrail's P10-P90 band and every past forecast the API shows use them.
+    rows = forecast_records(calibrate_for_city(pred, city))
     versions = sorted(rows["model_version"].unique())
     with session_scope() as session:
         session.execute(
@@ -1093,7 +1118,11 @@ def persist_latest_forecasts(city: str) -> int:
     path = PROCESSED_DIR / f"gbm_latest_{city}.parquet"
     if not path.exists():
         raise FileNotFoundError(f"{path} missing - run `make train`")
-    rows = latest_forecast_records(pd.read_parquet(path))
+    from models.production_calibration import calibrate_for_city
+
+    # The production forecast feeds the alert engine: its quantiles are CQR-calibrated
+    # (LIVE rows with the as-issued fit where the city has one).
+    rows = latest_forecast_records(calibrate_for_city(pd.read_parquet(path), city))
     versions = sorted(rows["model_version"].unique())
     with session_scope() as session:
         session.execute(
@@ -1231,11 +1260,29 @@ def evaluate(
             "reach_id_shap_share": shap_share,
             "not_computed": not_computed,
         }
-        metrics = dict(_clean(metrics))
+        from models.production_calibration import report as calibration_report
+
+        cal_rec = calibration_report(city)
         results_dir.mkdir(parents=True, exist_ok=True)
+        (results_dir / "calibration_production.json").write_text(
+            json.dumps(cal_rec, indent=2, default=str), encoding="utf-8"
+        )
+        metrics["production_calibration"] = {
+            "method": cal_rec["method"],
+            "live_rows_use_fit": cal_rec["live_rows_use_fit"],
+            "live_note": cal_rec["live_note"],
+            "note": "fold metrics above are the RAW model; the forecasts table, alerts and "
+            "API use the calibrated intervals (coverage below, test = held out)",
+            "coverage_80": {
+                wx: {f: c["by_variable"] for f, c in folds.items()}
+                for wx, folds in cal_rec["coverage_check"].items()
+            },
+        }
+        metrics = dict(_clean(metrics))
+        _carry_downstream_sections(results_dir / "metrics.json", metrics)
         (results_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
         figures = write_figures(metrics, results_dir / "figures")
-        written = persist_forecasts(pred) if write_db else 0
+        written = persist_forecasts(pred, city) if write_db else 0
         if write_db:
             written += persist_latest_forecasts(city)
         counters.record(

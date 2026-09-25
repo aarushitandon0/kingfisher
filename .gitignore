@@ -55,3 +55,11 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/settings.json
+
+# --- Private working notes (not published) ---
+masterspec.md
+data_sources.md
+design.md
+claude.md
+CLAUDE.md
+DATA_INVENTORY.md

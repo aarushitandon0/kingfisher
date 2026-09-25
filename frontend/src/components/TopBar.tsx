@@ -78,7 +78,7 @@ export function TopBar({ cities }: { cities: City[] | null }) {
           </svg>
         </span>
         {current && current.status === "READY" && (
-          <span className="t-dense hidden truncate text-muted lg:inline">
+          <span className="t-dense hidden truncate text-faint lg:inline">
             <span className="t-value-sm text-ink">{current.reaches}</span> reaches, <span className="t-value-sm text-ink">{current.optically_observable}</span> optically observable
           </span>
         )}
@@ -86,26 +86,20 @@ export function TopBar({ cities }: { cities: City[] | null }) {
           <ThemeToggle />
         </span>
       </div>
-      <nav className="flex h-12 items-stretch gap-1 overflow-x-auto border-t border-hairline px-2 md:ml-auto md:h-auto md:gap-6 md:border-t-0 md:px-6" aria-label="Views">
+      <nav className="flex h-12 items-stretch overflow-x-auto border-t border-hairline px-1 md:ml-auto md:h-auto md:gap-1 md:border-t-0 md:px-4" aria-label="Views">
         {VIEWS.map((v) => {
           const on = view === v.id;
           return (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => setView(v.id)}
-              aria-current={on ? "page" : undefined}
-              className={`relative flex flex-1 items-center justify-center gap-2 px-2 text-[14px] font-medium md:flex-none ${on ? "text-brand-300" : "text-muted hover:text-ink"}`}
-            >
-              <svg aria-hidden viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <button key={v.id} type="button" onClick={() => setView(v.id)} aria-current={on ? "page" : undefined} className="nav-tab flex-1 md:flex-none">
+              <span aria-hidden className="nav-tab-bg" />
+              <svg aria-hidden viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="hidden shrink-0 min-[400px]:block">
                 <path d={ICONS[v.id]} />
               </svg>
               {v.label}
-              <span aria-hidden className={`absolute inset-x-0 -bottom-px h-0.5 rounded-full ${on ? "bg-brand" : "bg-transparent"}`} />
             </button>
           );
         })}
-        <span className="hidden items-center gap-1 pl-2 md:flex">
+        <span className="hidden items-center gap-1 border-l border-hairline pl-3 ml-2 my-3.5 md:flex">
           <button
             type="button"
             onClick={() => window.dispatchEvent(new Event("kf:shortcuts"))}

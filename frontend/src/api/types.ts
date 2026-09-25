@@ -506,6 +506,14 @@ export interface MetricsDocument {
   not_computed: Record<string, string>;
   splits?: Record<string, { train_end: string }>;
   variables?: Record<string, { display_name: string; units: string }>;
+  /** models/production_calibration.py - CQR applied to what the forecasts table serves. */
+  production_calibration?: {
+    method: string;
+    live_rows_use_fit: string;
+    live_note: string | null;
+    note: string;
+    coverage_80: Record<string, Record<string, Record<string, { coverage_80_raw: number | null; coverage_80_calibrated: number | null }>>>;
+  };
   anomaly?: {
     reference: string;
     incidents_available: number;
