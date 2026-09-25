@@ -608,9 +608,17 @@ reaches, and the model learned a between-reach association, not the physical res
 
 Consequences in the product:
 
-- **In Coimbra, permeable paving, green roofs and riparian buffers are reported as
-  `NOT_ESTIMABLE`**, with this check shown next to the result, until a cited *direct*
-  effect on stream state is added to the table. None has been invented.
+- **In Coimbra, permeable paving on turbidity goes the `LITERATURE_DIRECT` path**: the
+  model is bypassed and the forecast quantiles are scaled by a cited suspended-solids
+  removal (0.82, range 0.32–0.95; NWRM U3 citing DTI 2006 and SNIFFER 2004) times the
+  share of impervious area treated. This treats all in-stream turbidity as impervious
+  runoff, so it is an upper bound, and the YAML says so. On the top-25 priority reaches
+  at 5 pp it gives −12 % to −30 % exceedance days on the 9 reaches imperviousness allows
+  (the other 16 have less than 5 % imperviousness to treat).
+- **Green roofs and riparian buffers stay `NOT_ESTIMABLE` in Coimbra**, and NDCI for all
+  three, with this check shown next to the result. Their sources give no number for
+  in-stream sediment (NWRM U1 says green roofs are "effective in removal of suspended
+  solids" without a figure). None has been invented.
 - **Detention basins and street sweeping** act on weather drivers, pass through the model,
   and return their honest literature-sized near-zero effects: detention −0.3 % peak
   intensity (Emerson et al. 2005, more than 100 basins at watershed scale); sweeping,

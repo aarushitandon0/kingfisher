@@ -220,6 +220,14 @@ def raw_table() -> dict[str, Any]:
     return cfg
 
 
+def table_without_direct_effect() -> CoefficientTable:
+    """The real table with every direct effect removed - the NOT_ESTIMABLE path."""
+    raw = copy.deepcopy(raw_table())
+    for i in raw["interventions"]:
+        i.pop("direct_effect", None)
+    return validate_coefficients(raw)
+
+
 def table_with_direct_effect() -> CoefficientTable:
     """The real table plus a TEST-ONLY cited direct effect on permeable paving."""
     raw = copy.deepcopy(raw_table())
@@ -573,9 +581,9 @@ def test_variant_a_is_refused(table: CoefficientTable, settings: ScenarioSetting
 
 
 def test_wrong_sign_without_direct_effect_is_not_estimable(
-    table: CoefficientTable, settings: ScenarioSettings
+    settings: ScenarioSettings,
 ) -> None:
-    res = run([PAVING], table=table, settings=settings, response_checks=checks(Verdict.WRONG_SIGN))
+    res = run([PAVING], table=table_without_direct_effect(), settings=settings, response_checks=checks(Verdict.WRONG_SIGN))
     (lv,) = res.levers
     assert lv.path is LeverPath.NOT_ESTIMABLE
     assert "WRONG_SIGN" in lv.reason and "no cited direct effect" in lv.reason
@@ -586,9 +594,9 @@ def test_wrong_sign_without_direct_effect_is_not_estimable(
 
 
 def test_negligible_response_is_not_trusted(
-    table: CoefficientTable, settings: ScenarioSettings
+    settings: ScenarioSettings,
 ) -> None:
-    res = run([PAVING], table=table, settings=settings, response_checks=checks(Verdict.NEGLIGIBLE))
+    res = run([PAVING], table=table_without_direct_effect(), settings=settings, response_checks=checks(Verdict.NEGLIGIBLE))
     assert res.levers[0].path is LeverPath.NOT_ESTIMABLE
     assert "NEGLIGIBLE" in res.levers[0].reason
 

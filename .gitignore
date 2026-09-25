@@ -61,3 +61,6 @@ Thumbs.db
 *.md
 !README.md
 frontend/dist-snapshot/
+
+# Demo video plan and script (private)
+DEMO_VIDEO.md

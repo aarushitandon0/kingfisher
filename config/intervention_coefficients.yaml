@@ -168,6 +168,31 @@ interventions:
           url: https://www.nwrm.eu/sites/default/files/nwrm_ressources/u3_-_permeable_paving_0.pdf
           locator: Costs - "Capital Costs EUR 40-90 / m2"; "Maintenance Costs EUR 1-5 / m2 per year"
           supports: [cost_low, cost_high]
+    # Used only when the model fails the imperviousness response check (LITERATURE_DIRECT).
+    # Coverage = extent / current imperviousness_pct (share of the impervious area treated).
+    direct_effect:
+      targets: [turbidity_proxy]
+      operation: scale_quantiles
+      unit: fractional removal of suspended solids from the treated area's runoff (0-1)
+      description: >
+        Scales the turbidity index forecast by (1 - removal x share of impervious area
+        treated). This treats in-stream turbidity as if it all came from impervious-area
+        runoff, so it is an UPPER BOUND: bank erosion, pervious-area runoff and resuspension
+        are untouched by paving. Central value is the low end of the US range, not its top;
+        the range runs down to the UK (SNIFFER) finding.
+      magnitude: 0.82
+      uncertainty_range: [0.32, 0.95]
+      citation:
+        - authors: NWRM project (OIEau et al.) for the European Commission, DG Environment
+          year: 2015
+          title: "Individual NWRM: U3 Permeable paving"
+          source: Natural Water Retention Measures project, contract 07.0330/2013/659147/SER/ENV.C1
+          url: https://www.nwrm.eu/sites/default/files/nwrm_ressources/u3_-_permeable_paving_0.pdf
+          locator: >-
+            PDF p.7, Soil Conservation / water quality: "DTI (2006) presented US data on the
+            effectiveness of porous pavement for suspended solids removal, reported at
+            82-95%. However this is high compared to the findings of SNIFFER (2004) of 32%."
+          supports: [direct_magnitude, direct_uncertainty_low, direct_uncertainty_high]
 
   - id: detention_basin
     name: Detention / retention basins

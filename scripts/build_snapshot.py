@@ -7,7 +7,8 @@ response body, byte for byte.
 
 Scenario runs cannot be enumerated, so a fixed set is run through the real engine now and
 listed in snapshot/api/scenarios/index.json: every lever alone at the workbench's default
-extent, and all levers together, on the city's top-priority observable reaches. The
+extent, and all levers together, on the city's top-priority observable reaches; plus, per
+lever, the observable reaches where the engine returns an estimate (estimable_presets). The
 workbench says it is a snapshot and offers only these.
 
     docker run -d --name kf-space --user 1000 -p 7860:7860 kingfisher-space   (make space first)
@@ -35,6 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "dist" / "snapshot-site"
 SNAP = OUT / "snapshot"
 PRESET_REACHES = 25
+MIN_SHOWCASE_DAYS = 0.5  # exceedance days/yr; below this a lever gets no extra preset
 HISTORY_DAYS = 3650  # the frontend's default in api.reach()
 
 SPACE_README = """---
@@ -116,6 +118,37 @@ def presets(api: Api, city: str, catalogue: dict[str, Any]) -> list[dict[str, An
         snapshot_file(file).parent.mkdir(parents=True, exist_ok=True)
         snapshot_file(file).write_bytes(raw)
         print(f"  scenario {pid}: {name} ({time.monotonic() - t0:.1f} s)")
+        out.append({"id": pid, "city": city, "name": name, "interventions": interventions, "file": file})
+    return out + estimable_presets(api, city, catalogue, start=len(combos))
+
+
+def estimable_presets(api: Api, city: str, catalogue: dict[str, Any], start: int) -> list[dict[str, Any]]:
+    """One preset per lever on the observable reaches where the engine returns an estimate.
+
+    The top-priority presets can come back all INSUFFICIENT_EVIDENCE / NOT_ESTIMABLE (e.g.
+    Pune: no monsoon-season threshold on most reaches). This probes each lever over every
+    observable reach and keeps the reaches whose result is OK for any variable - chosen by the
+    engine's own status, never by the size or sign of the change, so reaches that get worse
+    stay in. A lever is offered only if its estimate moves at least MIN_SHOWCASE_DAYS on some
+    reach; otherwise the top-priority preset already shows it."""
+    geo = json.loads(snapshot_file(f"/api/reaches?city={city}").read_bytes())["features"]
+    observable = [f["properties"]["reach_id"] for f in geo if f["properties"].get("observable")][:100]
+    out = []
+    for i in catalogue["interventions"]:
+        req = [{"type": i["id"], "reach_ids": observable, "extent": default_extent(i)}]
+        probe = json.loads(api.call("/api/scenarios", {"name": "snapshot probe", "interventions": req}))["result"]
+        ok = [r for r in probe["reaches"] if r["status"] == "OK"]
+        if not any(abs(r["delta_days"] or 0) >= MIN_SHOWCASE_DAYS for r in ok):
+            print(f"  estimable {i['id']}: {len(ok)} OK reach-variables, no change >= {MIN_SHOWCASE_DAYS} d - skipped")
+            continue
+        reach_ids = sorted({r["reach_id"] for r in ok})
+        interventions = [{"type": i["id"], "reach_ids": reach_ids, "extent": default_extent(i)}]
+        name = f"{i['name']} · {len(reach_ids)} reaches the engine can estimate"
+        pid = f"{city}-{start + len(out):02d}"
+        raw = api.call("/api/scenarios", {"name": name, "interventions": interventions})
+        file = f"/api/scenarios/{pid}"
+        snapshot_file(file).write_bytes(raw)
+        print(f"  scenario {pid}: {name}")
         out.append({"id": pid, "city": city, "name": name, "interventions": interventions, "file": file})
     return out
 
