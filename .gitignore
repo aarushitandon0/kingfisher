@@ -10,7 +10,7 @@
 # fetch that is ~800 MB: OSM (Overpass JSON + Geofabrik .pbf), Copernicus DEM GLO-30
 # tiles, ESA WorldCover, GHS-POP, Open-Meteo JSON, Sentinel Hub Statistical responses.
 # Re-acquire with:  python scripts/fetch_datasets.py
-# Provenance for every file is tracked in DATA_INVENTORY.md, which IS committed.
+# Provenance for every file is tracked in DATA_INVENTORY.md (local only, not committed).
 data/raw/
 data/interim/
 data/processed/
@@ -57,9 +57,6 @@ Thumbs.db
 !.vscode/settings.json
 
 # --- Private working notes (not published) ---
-masterspec.md
-data_sources.md
-design.md
-claude.md
-CLAUDE.md
-DATA_INVENTORY.md
+# Every markdown file is private except README.md (in any folder).
+*.md
+!README.md
