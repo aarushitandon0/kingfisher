@@ -2,7 +2,7 @@
 # Requires: docker compose, and a Python 3.11 env with `pip install -e ".[dev]"`.
 
 .DEFAULT_GOAL := help
-.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l1-probe l2 static asissued exposure s2-shift dataset train evaluate nh-export ealstm-smoke ealstm-train ealstm-status colab-bundle hindcast h2h anomaly response-check live-weather forecasts-latest alerts db-up db-down db-migrate db-revision test lint format api web web-install space
+.PHONY: help dirs data data-list smoke smoke-sat smoke-weather l0 observability l1 l1-estimate l1-probe l2 static asissued exposure s2-shift dataset train evaluate nh-export ealstm-smoke ealstm-train ealstm-status colab-bundle hindcast h2h anomaly response-check live-weather forecasts-latest alerts db-up db-down db-migrate db-revision test lint format api web web-install space snapshot
 
 PY ?= python
 
@@ -140,3 +140,6 @@ web:  ## Run the frontend dev server on http://localhost:5173 (proxies /api to m
 
 space:  ## Deploy bundle for the free Hugging Face Docker Space -> dist/space/ (needs db-up)
 	$(PY) scripts/build_space.py
+
+snapshot:  ## Static hosted demo -> dist/snapshot-site/ (needs the `make space` image running on :7860)
+	$(PY) scripts/build_snapshot.py

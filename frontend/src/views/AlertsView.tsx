@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api/client";
+import { api, apiHref } from "../api/client";
 import type { AlertSummary, AlertsResponse, ReachCollection, Severity } from "../api/types";
 import { Card, Chevron, ErrorNote, Loading, PageHeader, Segmented, severityBorder, SeverityLabel, Skeleton, Stat } from "../components/bits";
 import { AttributionBars } from "../components/charts";
@@ -586,7 +586,7 @@ function AlertDetailBlock({ id }: { id: string }) {
         >
           Open reach on map
         </button>
-        <a className="btn" href={`/api/export/fhir/${a.alert_id}`} target="_blank" rel="noreferrer">
+        <a className="btn" href={apiHref(`/api/export/fhir/${a.alert_id}`)} target="_blank" rel="noreferrer">
           FHIR bundle
         </a>
       </div>

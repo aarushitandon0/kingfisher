@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, ApiError } from "../api/client";
+import { api, ApiError, SNAPSHOT, type ScenarioPreset } from "../api/client";
 import type { Citation, InterventionInfo, ReachCollection, ReachResult, ScenarioResult, Variable } from "../api/types";
 import { Card, Chevron, ErrorNote, Loading, Segmented, Swatch } from "../components/bits";
 import { Splitter, usePanelSize } from "../components/Splitter";
@@ -79,6 +79,27 @@ export function ScenarioView({ city, reaches }: { city: string; reaches: Loadabl
   }, [catalogue.data]);
 
   const enabled = (catalogue.data?.interventions ?? []).filter((i) => levers[i.id]?.enabled);
+  const presets = useApi(SNAPSHOT ? `presets:${city}` : null, () => api.presets(city));
+
+  /** Snapshot build: put a precomputed scenario's exact selection and levers on screen, then
+   * replay its stored engine output. */
+  async function loadPreset(p: ScenarioPreset) {
+    setScenarioReaches(p.interventions[0]?.reach_ids ?? []);
+    for (const i of catalogue.data?.interventions ?? []) {
+      const hit = p.interventions.find((x) => x.type === i.id);
+      setLever(i.id, hit ? { enabled: true, extent: hit.extent ?? defaultExtent(i) } : { enabled: false });
+    }
+    setRunning(true);
+    setRunError(null);
+    try {
+      setScenario(await api.runScenario({ name: p.name, interventions: p.interventions }));
+      setMode("change");
+    } catch (e) {
+      setRunError(e instanceof ApiError ? e : new ApiError(0, String(e)));
+    } finally {
+      setRunning(false);
+    }
+  }
   const canRun = scenarioReaches.length > 0 && scenarioReaches.length <= 100 && enabled.length > 0 && !running;
 
   async function run() {
@@ -288,6 +309,20 @@ export function ScenarioView({ city, reaches }: { city: string; reaches: Loadabl
                 >
                   <p className="font-semibold text-ink">{expect.title}</p>
                   <p className="mt-1 text-muted">{expect.body}</p>
+                </div>
+              )}
+              {SNAPSHOT && (
+                <div className="mb-3 rounded-md bg-raised px-3 py-2.5">
+                  <p className="t-dense text-ink">
+                    <span className="font-semibold">Hosted snapshot:</span> no live model here. These scenarios were run by the real engine when the snapshot was built; the full system runs any selection.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(presets.data ?? []).map((p) => (
+                      <button key={p.id} type="button" className="btn h-8 px-2.5 text-[12px]" disabled={running} onClick={() => loadPreset(p)}>
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
               <p className="t-dense mb-2 text-muted" aria-live="polite">

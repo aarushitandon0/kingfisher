@@ -60,3 +60,4 @@ Thumbs.db
 # Every markdown file is private except README.md (in any folder).
 *.md
 !README.md
+frontend/dist-snapshot/
